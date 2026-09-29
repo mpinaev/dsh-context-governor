@@ -1,5 +1,7 @@
 # dsh-context-governor
 
+**English** | [Русский](README.md)
+
 A DeepSeek Harness plugin: a session context indicator — prompt size, step cost,
 cache-hit, bands and the compaction threshold, DeepSeek balance and the
 peak/off-peak tariff, plus a handoff button.

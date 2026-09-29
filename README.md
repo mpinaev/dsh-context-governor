@@ -1,5 +1,7 @@
 # dsh-context-governor
 
+[English](README.en.md) | **Русский**
+
 Плагин DeepSeek Harness: индикатор контекста сессии — размер prompt, цена шага,
 cache-hit, полосы и порог компакции, баланс DeepSeek и тариф, кнопка handoff.
 
