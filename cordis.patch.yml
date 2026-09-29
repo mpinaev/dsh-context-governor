@@ -1,0 +1,11 @@
+# dsh-context-governor — bundle patch.
+#
+# Mounts the host half (index.js) into a profile when this package is listed in
+# `dsh.profile.bundles`. The `dsh.client` declaration in package.json makes the
+# web app load ./client.js as the browser half.
+#
+# The node id is `context-governor`: profile-level config overrides
+# (`profiles/<name>/cordis.patch.yml`) must target exactly this id.
+- insert:
+    - id: context-governor
+      name: dsh-context-governor

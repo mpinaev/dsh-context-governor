@@ -1,0 +1,56 @@
+name: Bug report
+description: Something does not work as documented
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most reports are DSH-version mismatches: the plugin is disabled when its
+        declared peer range does not cover the running DSH. The first two fields
+        settle that in seconds.
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH version
+      description: Output of `dsh --version`
+      placeholder: 0.1.7-rc.2
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: From the installed plugin package.json
+      placeholder: 0.2.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: Ubuntu 24.04 / macOS 15 / Windows 11 + Git Bash
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happens
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server log lines
+      description: Lines containing [context-governor] from the dsh web log.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before posting
+      options:
+        - label: The plugin is not disabled in `dsh --dump-config`
+          required: true
+        - label: I understand the plugin never calls a model and this is not about model output quality
+          required: true

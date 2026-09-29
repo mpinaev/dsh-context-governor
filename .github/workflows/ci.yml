@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: smoke test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Smoke test
+        run: npm test
+      - name: Package contents
+        run: npm pack --dry-run
+
+  # Weekly probe against the newest DSH: unmounting or a version-gate rejection
+  # shows up here before users report it.
+  compat:
+    name: mounts into the latest DSH
+    runs-on: ubuntu-latest
+    if: github.event_name == "schedule" || github.event_name == "workflow_dispatch"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the newest DSH
+        run: npm install -g @deepseek-ai/dsh@next
+      - name: Mount the plugin into a throwaway profile
+        run: dsh plugin --profile ci add "link:$PWD"
+      - name: The version gate must keep it enabled
+        run: |
+          dsh --profile ci --dump-config > dump.yml
+          grep -n "id: context-governor" dump.yml
+          if grep -A4 "id: context-governor" dump.yml | grep -q "disabled: true"; then
+            echo "::error::the version gate disabled the plugin — widen peerDependencies"
+            exit 1
+          fi
