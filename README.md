@@ -1,263 +1,273 @@
 # dsh-context-governor
 
-[English](README.en.md) | **Русский**
+**English** | [Русский](README.ru.md)
 
-Плагин DeepSeek Harness: индикатор контекста сессии — размер prompt, цена шага,
-cache-hit, полосы и порог компакции, баланс DeepSeek и тариф, кнопка handoff.
+A DeepSeek Harness plugin: a session context indicator — prompt size, step cost,
+cache-hit, bands and the compaction threshold, DeepSeek balance and the
+peak/off-peak tariff, plus a handoff button.
 
-**Плагин не вызывает модель и не тратит ни одного токена** — подробности ниже.
+**It never calls a model and spends no tokens at all** — details below.
 
-## Не тратит токены и не вызывает модель
+## No tokens, no model calls
 
-Всё, что показывает плагин, — это **измерение и арифметика**. Он читает токены и
-окно из проекций harness, считает цену по настроенным ставкам и читает баланс по
-HTTP.
+Everything the plugin shows is **measurement and arithmetic**. It reads tokens and
+the window from harness projections, computes the cost with the configured rates
+and fetches the balance over HTTP.
 
-- **Ни одного запроса на генерацию.** Ни для ревью, ни для суммаризации, ни в фоне:
-  плагин не просит модель что-либо посчитать.
-- **Ноль токенов.** Плагин не отправляет запросов провайдеру и не расходует бюджет.
-  Единственное обращение к LLM-слою — чтение каталога моделей
-  (`resolveModelInfo`) за окном и лимитами; это не генерация и не оплачиваемые
-  токены.
-- **Ничего не меняет.** Историю, системный промпт и кэш префикса не трогает,
-  поэтому на prompt-cache повлиять не может.
-- **Сеть — только за балансом.** Сервис аккаунта harness (если выполнен вход) и
-  `api.deepseek.com/user/balance` — это не модель. Плюс `git status` при нажатии
-  кнопки handoff, и то локально.
+- **No generation requests.** Not for review, not for summarization, not in the
+  background: the plugin never asks a model to compute anything.
+- **Zero tokens.** The plugin sends no provider requests and spends none of your
+  budget. Its only touch of the LLM layer is reading the model catalog
+  (`resolveModelInfo`) for the window and limits; that is not generation and not
+  billable tokens.
+- **Nothing is modified.** It does not touch the history, the system prompt or the
+  prefix cache, so it cannot affect prompt caching.
+- **The network is used for the balance only.** The harness account service (when
+  signed in) and `api.deepseek.com/user/balance` are not a model. Plus `git status`
+  on a handoff click, locally.
 
-## Установка
+## Install
 
-Пакетом (когда опубликован):
+As a package (once published):
 
 ```sh
 dsh plugin --profile web add dsh-context-governor
 ```
 
-Из исходников:
+From source:
 
 ```sh
 dsh plugin --profile web add github:mpinaev/dsh-context-governor
 ```
 
-Локально, без установки: положить каталог в `~/.dsh/profiles/web/plugins/` и вставить
-его в `cordis.patch.yml` профиля ссылкой на файл —
+Locally, without installing: drop the directory into
+`~/.dsh/profiles/web/plugins/` and reference the file from the profile's
+`cordis.patch.yml`:
 
 ```yaml
 - insert:
     - id: context-governor
-      name: /абсолютный/путь/к/dsh-context-governor/index.js
+      name: /absolute/path/to/dsh-context-governor/index.js
 ```
 
-После установки пакетом перезапусти `dsh web` (хост-половина читается при старте) и
-обнови страницу (клиентская половина отдаётся снимком по ревизии).
+Installed as a package, the host half is read at startup, so restart `dsh web`
+and reload the page — the client half is served as a revision snapshot.
 
-Проверка: `npm test` — smoke-тест прогоняет хост-половину на stub-харнессе без сети
-и без вызовов модели и фиксирует порог компакции, вёдра кэша, цену шага и привязку
-баланса к провайдеру.
+Check it with `npm test`: the smoke test runs the host half against a stub
+harness, with no network and no model calls, and pins the compaction threshold,
+the cache buckets, the step cost and the balance provider gate.
 
-## Поддерживаемые версии DSH
+## Supported DSH versions
 
-| Версия DSH | Состояние |
+| DSH version | State |
 |---|---|
-| `0.1.7-rc.2` … `<0.2.0` | поддерживается, проверено вживую |
-| `0.2.0-rc.1` … `<0.3.0` | диапазон объявлен; проверяется еженедельной CI-пробой |
+| `0.1.7-rc.2` … `<0.2.0` | supported, verified live |
+| `0.2.0-rc.1` … `<0.3.0` | range declared; probed weekly by CI |
 
-DSH **отключает** плагин, если объявленный диапазон не покрывает текущую версию
-(проверяются `peerDependencies` с учётом пререлизов). Поэтому при старте хост пишет
-в лог источник токенов и тариф: если этих строк нет — скорее всего, плагин отключён,
-и стоит посмотреть `dsh --dump-config`.
+DSH **disables** the plugin when its declared range does not cover the running
+version (peer ranges are matched with prereleases included). That is why the host
+logs its token source and tariff at startup: if those lines are missing, the plugin
+is probably disabled, and `dsh --dump-config` will say so.
 
-## Разработка
+## Development
 
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 34 проверки: без сети и без вызовов модели
-./scripts/compat-check.sh    # поднимет отдельный инстанс на 3099 и спросит его API
+npm test                     # 34 assertions: no network, no model calls
+./scripts/compat-check.sh    # boots a spare instance on 3099 and asks its API
 dsh plugin --profile web add "link:$PWD"
 ```
 
-Правила и порядок релиза — в [CONTRIBUTING.md](CONTRIBUTING.md).
+Rules and the release flow live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Что показывает
+## What it shows
 
-- размер prompt (свежий вход + кэш-токены) и **оценку цены шага в $**;
-- относительный множитель стоимости относительно `base` (свежий вход = 1.0,
-  кэш-чтение = `cacheReadRate/freshRate`, у deepseek-flash это ~0.02);
+- prompt size (uncached input + cache tokens) and an **estimated step cost in USD**;
+- a cost multiplier relative to `base` (fresh input = 1.0, cache read =
+  `cacheReadRate/freshRate`, about 0.02 for deepseek-flash);
 - cache-hit, %;
-- холодный вход за шаг (свежие токены в последнем запросе);
-- полосу: 0 = норма, 1 = warn, 2 = high, 3 = critical;
-- **баланс DeepSeek** (числа с /user/balance, ключ на клиент не уходит);
-- **тариф пик/off-peak** с обратным отсчётом до смены.
+- cold input per step (fresh tokens in the last request);
+- a band: 0 = normal, 1 = warn, 2 = high, 3 = critical;
+- **DeepSeek balance** (numbers only; the key never reaches the client);
+- **peak/off-peak tariff** with a countdown to the switch.
 
-**Почему множитель по абсолютному prompt врёт.** У deepseek-flash кэш-чтение
-в 50 раз дешевле свежего входа ($0.003 против $0.15 за 1M off-peak). При
-cache-hit 99 % контекст 260k стоит ~$0.0015 за шаг, хотя `prompt/base` дал бы
-x2.6. Поэтому цена считается по ведрам: свежие × `freshRate`, кэш-чтение ×
-`cacheReadRate`, запись в кэш × `cacheWriteRate`, output × `outputRate`.
+**Why a multiplier over the raw prompt lies.** For deepseek-flash a cache read is
+50 times cheaper than fresh input ($0.003 versus $0.15 per 1M off-peak). At 99%
+cache-hit a 260k context costs about $0.0015 per step, while `prompt/base` would
+report x2.6. That is why the cost is computed per bucket: fresh x `freshRate`,
+cache read x `cacheReadRate`, cache write x `cacheWriteRate`, output x
+`outputRate`.
 
-## Источники данных
+## Data sources
 
-**Токены.** Размер prompt, cache-hit и output берутся из **проекции harness**
-`tokenUsage` (сервис `ctx.sessionProjections`): `uncachedInputTokens`,
-`cacheReadTokens`, `cacheWriteTokens`, `outputTokens`. Это авторитетные числа
-провайдера — они переживают пейджинг и компакцию и корректно закрывают слот при
-ретрае (`llm/retry-started`), поэтому повторная попытка не удваивает токены.
-Если проекций в сборке нет, плагин падает на собственную свёртку `llm/stream`.
+**Tokens.** Prompt size, cache-hit and output come from the harness projection
+`tokenUsage` (service `ctx.sessionProjections`): `uncachedInputTokens`,
+`cacheReadTokens`, `cacheWriteTokens`, `outputTokens`. These are the
+provider's authoritative numbers: they survive paging and compaction and close the
+slot correctly on a retry (`llm/retry-started`), so a repeated attempt does not
+double count. Without projections in the build, the plugin falls back to its own
+fold of `llm/stream`.
 
-**Окно и порог.** Окно модели и давление берутся из проекции `contextPressure`
-(`contextWindow`, `pressureTokens`), резерв вывода — из `request/header`
-(`maxTokens` запроса). Порог компакции считается ровно как в harness
-(`dsh-compaction-basic`):
-
-```
-порог = min(thresholdRatio × окно, окно − резерв − headroom)
-```
-
-**Порог — по своей сессии.** Окно и резерв хранятся отдельно для каждой сессии:
-сессия, чей маршрут ещё не объявлен, показывает «окно неизвестно», а не порог
-чужой модели. Полосы при неизвестном окне не выдумываются.
-
-**Три ведра входа считаются по своим ставкам.** Кэш-чтение (по умолчанию
-$0.003/1M) в 50 раз дешевле свежего входа, а запись в кэш у DeepSeek
-тарифицируется как обычный вход (`cacheWriteRate`, по умолчанию = `freshRate`).
-Cache-hit — это доля prompt, отданная из кэша **на чтение**; запись в кэш хитом
-не считается.
-
-**Деньги.** Стоимость запроса в долларах harness не считает и провайдер не
-отдаёт — это **оценка** плагина: токены (из harness) × ставки (из конфига).
-
-## Сигналы
-
-- серверный лог при входе в полосу, при холодном префилле и при дорогом шаге;
-- клиентский чип в шапке сессии, подсвеченный по полосе, с панелью деталей;
-- в чипе: баланс и метка тарифа (⚡ пик / 🌙 off-peak с отсчётом).
-
-## Тариф пик/off-peak и баланс
-
-**Тариф.** Правило DeepSeek фиксировано: пик — по пекинскому времени (UTC+8), по
-будням, 09:00–12:00 и 14:00–18:00; всё остальное, включая выходные целиком, —
-off-peak и стоит вдвое дешевле. Локальная таймзона в решении не участвует, только
-в отображении. Ставки в конфиге (freshRate, cacheReadRate, cacheWriteRate,
-outputRate) — это off-peak; в пик они умножаются на peakMultiplier (по умолчанию 2),
-поэтому цена
-шага и предупреждения считаются по фактическому тарифу момента. Обратный отсчёт
-ведёт к ближайшей реальной смене: границы внутри выходных пропускаются, то есть
-после пятницы 18:00 отсчёт идёт до понедельника 09:00, а не до субботы.
-
-**Баланс.** Порядок источников:
-
-1. **Официальный аккаунт платформы** — сервис harness `ctx.deepseekAccount`
-   (`getBalance`). Работает, когда выполнен вход в аккаунт и клиент прислал
-   версию сборки; кошельки приходят строками, валюта может быть CNY или USD,
-   подарочные — отдельным списком.
-2. **API-ключ** — `GET https://api.deepseek.com/user/balance` с ключом из
-   credentials-seam (`DEEPSEEK_API_KEY`), затем из окружения.
-
-Поле `source` в ответе говорит, откуда цифры: `account` или `api-key`.
-Откат на второй источник — намеренный: чужая сборка может быть без платформенного
-входа, и баланс не должен из-за этого пропадать.
-
-**Баланс показывается только на провайдерах DeepSeek.** На cline, clinebot и любом
-другом провайдере чужая сумма в чипе — прямая дезинформация: там баланс не
-отображается, а в панели вместо числа стоит пометка «только для DeepSeek». Список
-провайдеров настраивается через `balanceProviders` (по умолчанию
-`['deepseek-official']`), плюс принимается любой id, начинающийся с `deepseek`.
-Если у сессии ещё нет своего маршрута, провайдер не угадывается: баланс скрыт.
-
-Ключ **никогда не покидает хост**:
-на клиент уходят только числа (итог, подарок, пополнение, валюта, доступность).
-Параллельные чтения схлопываются, ошибки деградируют в состояние (no-credential,
-error, disabled), а не в исключение. Кнопка ⟳ сбрасывает кэш и перечитывает баланс
-и тариф.
-
-**Доступ к роутам.** `/context-governor/api/*` закрыты служебным заголовком и
-проверкой Origin: запрос обязан нести `x-dsh-context-governor: 1` (его ставит
-только клиент плагина) и не быть кросс-доменным. Без заголовка — 403, при чужом
-`Origin` — 403. Обычный GET с loopback без `Origin` пропускается — это удобно для
-диагностики через `curl`.
-
-Практический смысл: при 99 % cache-hit дорогой шаг — это не большой контекст, а
-свежий вход или провал кэша, и тариф удваивает эту разницу.
-
-## Кнопка handoff
-
-Один клик: хост собирает сводку сессии (задача, состояние, cwd, затронутые файлы,
-дочерние сессии), клиент открывает **новую сессию в том же рабочем пространстве**
-через `ctx.uiWorkspace.startSession()` и подставляет сводку в её черновик. Веток и
-запасных путей нет: нет Alt+клика, нет вставки в текущую сессию, нет буфера обмена.
-
-Надёжность держат два объявленных сервиса:
-
-- клиент — `inject = ['slots', 'uiWorkspace']`: без объявления Cordis не отдаёт
-  сервис, и раньше кнопка молча уходила в запасные ветки вместо открытия сессии;
-- хост — `inject = [... 'sessionQuery']`: без него сводка выходила без задачи,
-  состояния и путей (одни заглушки).
-
-Сводка попадает в новую сессию отложенно: клик запоминает текст, `startSession()`
-открывает сессию, её слот ввода рендерится — и тот же компонент подставляет текст в
-черновик через `inputActions.setDraft`.
-
-## Языки интерфейса
-
-Языки: **en** (по умолчанию), **zh**, **ru**. Переключатель — маленькая кнопка
-рядом с ⟳ в шапке панели чипа: она показывает текущий код (EN / 中文 / RU) и
-циклически меняет язык. Выбор запоминается в браузере
-(`localStorage: dsh-context-governor.lang`) и сразу перерисовывает и чип, и
-кнопку handoff.
-
-Язык влияет на весь текст интерфейса (подписи панели, предупреждения, подсказки)
-и на язык документа, который кнопка handoff вставляет в новую сессию: клиент
-передаёт `lang` в `/api/handoff`. Хост отдаёт данные без текста (полоса, тариф и
-предупреждения — кодами), поэтому смена языка не требует перезапроса данных.
-
-## Пороги
-
-**Окно модели плагин нигде не прописывает — он читает его из harness:**
-
-1. Основной источник — проекция `contextPressure` (`contextWindow`,
-   `pressureTokens`) сервиса `ctx.sessionProjections`: это авторитетное окно
-   живой сессии.
-2. Резерв вывода — `maxTokens` запроса из события `request/header`; до него
-   подсказкой служит `request/context` (`contextWindow`).
-3. Каталог моделей (`ctx.llm.resolveModelInfo` для
-   `agentDefaultModel.currentSelection()`) остаётся подсказкой до первого запроса
-   и нужен только для списка известных маршрутов.
-
-Окно и резерв хранятся **по каждой сессии**.
-
-Из окна считаются порог компакции и полосы:
+**Window and threshold.** The model window and pressure come from the
+`contextPressure` projection (`contextWindow`, `pressureTokens`); the output
+reserve comes from `request/header` (the request `maxTokens`). The compaction
+threshold is computed exactly as the harness does (`dsh-compaction-basic`):
 
 ```
-резерв          = maxTokens запроса
-порог компакции = min(thresholdRatio * окно, окно - резерв - headroomTokens)
-полоса i        = bandRatios[i] * порог компакции
+threshold = min(thresholdRatio * window, window - reserve - headroom)
 ```
 
-При окне 1 000 000 и резерве 256 000 порог = 678 464, полосы = 237k / 407k / 577k.
-При окне 800 000 — порог 478 464, полосы 167k / 287k / 407k. Формула совпадает
-с `dsh-compaction-basic` (`W - reserved - headroom`); если бы полосы задавались
-константами, «критично» оказалось бы ниже реального порога перезаписи префикса.
+**The threshold belongs to its own session.** Window and reserve are kept per
+session: a session whose route is not known yet reports a window unknown instead
+of another model's threshold. No bands are invented while the window is unknown.
 
-Плагин адаптируется и к разным моделям в разных сессиях: у каждой сессии своё
-окно маршрута, и чужое ей не подставляется. Если окно ещё не разрешилось, полосы
-не выдумываются (их нет), а в панели появляется предупреждение «окно модели
-неизвестно».
+**Three input buckets, each with its own rate.** A cache read (default $0.003/1M)
+is 50 times cheaper than fresh input, while a cache write on DeepSeek is billed as
+ordinary input (`cacheWriteRate`, default = `freshRate`). Cache-hit is the
+share of the prompt served from cache **on read**; a cache write does not count as
+a hit.
 
-В `~/.dsh/profiles/web/cordis.patch.yml` в блоке `context-governor` настраиваются
-только `bandRatios`, `headroomTokens`, `thresholdRatio`, прайс
-(`freshRate`, `cacheReadRate`, `cacheWriteRate`, `outputRate`, `peakMultiplier`) и
-пороги сигналов (`anomalyDelta`, `anomalyCostUsd`, `cacheHitFloorPct`); баланс —
-`balanceEnabled`, `useAccountBalance`, `balanceProviders`, `balanceTtlMs`,
-`balanceTimeoutMs`. `windowTokens` и `reservedTokens` можно задать принудительно,
-но по умолчанию они `0` — «спросить у harness»; хардкод там означает потерю
-адаптивности.
+**Money.** The harness does not compute request cost in dollars, and the provider
+does not report it either. This is the plugin's **estimate**: tokens (from the
+harness) x rates (from config).
 
-## Важно
+## Signals
 
-Полосы считаются от окна модели; `warn/high/critical` не читаются. Плагин
-измеряет и ничего не режет, историю и промпт не меняет.
+- a server log entry when a session enters a band, on a cold prefill and on an
+  expensive step;
+- a client chip in the session header, coloured by band, with a details panel;
+- on the chip: balance and the tariff marker (peak / off-peak with countdown).
 
-## Лицензия
+## Peak/off-peak tariff and balance
 
-MIT — см. [LICENSE](LICENSE).
+**Tariff.** The DeepSeek rule is fixed: peak is Beijing time (UTC+8), on weekdays,
+09:00–12:00 and 14:00–18:00; everything else, weekends included, is off-peak and
+costs half. The local timezone plays no part in the decision, only in the display.
+The configured rates (freshRate, cacheReadRate, cacheWriteRate, outputRate) are
+off-peak; at peak they are multiplied by peakMultiplier (2 by default), so the
+step cost and the warnings follow the tariff of the moment. The countdown runs to
+the next real switch: boundaries inside a weekend are skipped, so after Friday
+18:00 it counts to Monday 09:00, not to Saturday.
+
+**Balance.** Sources in order:
+
+1. **The official platform account** — the harness service `ctx.deepseekAccount`
+   (`getBalance`). It works when the account is signed in and the client has sent
+   its build version; wallets arrive as strings, the currency may be CNY or USD,
+   and bonus wallets come as a separate list.
+2. **The API key** — `GET https://api.deepseek.com/user/balance`, with the key
+   from the credentials seam (`DEEPSEEK_API_KEY`) or from the environment.
+
+The `source` field says where the numbers came from: `account` or `api-key`.
+The fallback to the second source is deliberate: another build may have no platform
+sign-in, and the balance must not disappear because of that.
+
+**The balance is shown only for DeepSeek providers.** On cline, clinebot and any
+other provider a foreign total on the chip is plain misinformation: no balance is
+displayed there, and the panel shows a DeepSeek-only note instead of a number. The
+provider list is configurable through `balanceProviders` (default
+`['deepseek-official']`), and any id starting with `deepseek` is accepted. If a
+session has no route of its own yet, the provider is not guessed and the balance
+stays hidden.
+
+The key **never leaves the host**: only numbers reach the client (total, bonus,
+top-up, currency, availability). Concurrent reads collapse, and failures degrade
+into a state (no-credential, error, disabled) rather than an exception. The
+refresh button clears the cache and re-reads the balance and the tariff.
+
+**Route access.** `/context-governor/api/*` are closed by a guard header and an
+Origin check: a request must carry `x-dsh-context-governor: 1` (only the plugin
+client sets it) and must not be cross-origin. Without the header — 403, with a
+foreign `Origin` — 403. A plain loopback GET without `Origin` is allowed, which
+keeps `curl` diagnostics convenient.
+
+The practical point: at 99% cache-hit an expensive step is not a large context but
+fresh input or a cache miss, and the tariff doubles that difference.
+
+## Handoff button
+
+One click: the host assembles a session summary (task, state, cwd, touched files,
+child sessions), the client opens a **new session in the same workspace** through
+`ctx.uiWorkspace.startSession()` and puts the summary into its draft. There are
+no branches or fallbacks: no Alt+click, no insertion into the current session, no
+clipboard.
+
+Two declared services keep it reliable:
+
+- the client declares `inject = ['slots', 'uiWorkspace']`: without the declaration
+  Cordis does not hand over the service, and the button used to slip into the
+  fallback paths instead of opening a session;
+- the host declares `inject = [... 'sessionQuery']`: without it the summary came
+  out with no task, state or paths (placeholders only).
+
+The summary reaches the new session lazily: the click remembers the text,
+`startSession()` opens the session, its input slot renders, and the same
+component puts the text into the draft through `inputActions.setDraft`.
+
+## UI languages
+
+Languages: **en** (default), **zh**, **ru**. The switch is a small button next to
+the refresh control in the chip header: it shows the current code (EN / Chinese /
+RU) and cycles the language. The choice is remembered in the browser
+(`localStorage: dsh-context-governor.lang`) and immediately re-renders both the
+chip and the handoff button.
+
+The language covers all interface text (panel labels, warnings, tooltips) and the
+language of the document the handoff button inserts into the new session: the
+client passes `lang` to `/api/handoff`. The host returns data without text
+(band, tariff and warnings are codes), so switching the language needs no data
+refetch.
+
+## Thresholds
+
+**The plugin never hardcodes the model window — it reads it from the harness:**
+
+1. The main source is the `contextPressure` projection (`contextWindow`,
+   `pressureTokens`) of `ctx.sessionProjections`: the authoritative window of
+   the live session.
+2. The output reserve is the request `maxTokens` from the `request/header`
+   event; until then `request/context` (`contextWindow`) serves as a hint.
+3. The model catalog (`ctx.llm.resolveModelInfo` for
+   `agentDefaultModel.currentSelection()`) remains a hint until the first request.
+
+Window and reserve are kept **per session**.
+
+The compaction threshold and the bands are derived from the window:
+
+```
+reserve               = request maxTokens
+compaction threshold  = min(thresholdRatio * window, window - reserve - headroomTokens)
+band i                = bandRatios[i] * compaction threshold
+```
+
+With a 1,000,000 window and a 256,000 reserve the threshold is 678,464 and the
+bands are 237k / 407k / 577k. With an 800,000 window the threshold is 478,464 and
+the bands 167k / 287k / 407k. The formula matches `dsh-compaction-basic`
+(window - reserve - headroom); with constant bands, critical would sit below the
+real prefix-rewrite threshold.
+
+The plugin adapts to different models in different sessions: every session keeps
+its own route window, and another session's window is never substituted. If the
+window has not been resolved yet, the bands are not invented (there are none) and
+the panel shows a model-window-unknown warning.
+
+In the `context-governor` block of `~/.dsh/profiles/web/cordis.patch.yml` you
+can tune only `bandRatios`, `headroomTokens`, `thresholdRatio`, the rates
+(`freshRate`, `cacheReadRate`, `cacheWriteRate`, `outputRate`,
+`peakMultiplier`) and the signal thresholds (`anomalyDelta`,
+`anomalyCostUsd`, `cacheHitFloorPct`); for the balance — `balanceEnabled`,
+`useAccountBalance`, `balanceProviders`, `balanceTtlMs`,
+`balanceTimeoutMs`. `windowTokens` and `reservedTokens` can be forced, but
+they default to `0`, meaning ask the harness; hardcoding them loses the
+adaptivity.
+
+## Notes
+
+The bands are derived from the model window; the warn/high/critical labels are not
+read back. The plugin measures and never trims: it does not change history or the
+prompt.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
