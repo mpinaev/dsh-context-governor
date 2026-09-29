@@ -10,7 +10,7 @@ The plugin is a DSH bundle. For local work, install the checkout into a profile
 as a link so edits apply without reinstalling:
 
 ```sh
-git clone git@github.com:<owner>/dsh-context-governor.git
+git clone git@github.com:mpinaev/dsh-context-governor.git
 cd dsh-context-governor
 npm test
 dsh plugin --profile web add "link:$PWD"
@@ -47,4 +47,4 @@ npm pack --dry-run    # the published file list must stay intended
 2. Bump `version` in `package.json` (patch for DSH compatibility, minor for features).
 3. `npm test` and `npm pack --dry-run`.
 4. Commit, tag `vX.Y.Z`, push the tag.
-5. `npm publish --provenance` (or `dsh plugin --profile web add github:<owner>/dsh-context-governor`).
+5. `npm publish --provenance` (or `dsh plugin --profile web add github:mpinaev/dsh-context-governor`).

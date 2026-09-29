@@ -37,6 +37,15 @@
     "deepseek-balance",
     "off-peak"
   ],
+  "author": "Michael A. Pinaev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mpinaev/dsh-context-governor.git"
+  },
+  "homepage": "https://github.com/mpinaev/dsh-context-governor#readme",
+  "bugs": {
+    "url": "https://github.com/mpinaev/dsh-context-governor/issues"
+  },
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

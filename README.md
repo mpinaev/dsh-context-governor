@@ -34,7 +34,7 @@ dsh plugin --profile web add dsh-context-governor
 Из исходников:
 
 ```sh
-dsh plugin --profile web add github:<owner>/dsh-context-governor
+dsh plugin --profile web add github:mpinaev/dsh-context-governor
 ```
 
 Локально, без установки: положить каталог в `~/.dsh/profiles/web/plugins/` и вставить
@@ -68,7 +68,7 @@ DSH **отключает** плагин, если объявленный диа�
 ## Разработка
 
 ```sh
-git clone <repo>
+git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
 npm test                     # 34 проверки: без сети и без вызовов модели
 ./scripts/compat-check.sh    # поднимет отдельный инстанс на 3099 и спросит его API

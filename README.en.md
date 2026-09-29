@@ -35,7 +35,7 @@ dsh plugin --profile web add dsh-context-governor
 From source:
 
 ```sh
-dsh plugin --profile web add github:<owner>/dsh-context-governor
+dsh plugin --profile web add github:mpinaev/dsh-context-governor
 ```
 
 Locally, without installing: drop the directory into
@@ -70,7 +70,7 @@ is probably disabled, and `dsh --dump-config` will say so.
 ## Development
 
 ```sh
-git clone <repo>
+git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
 npm test                     # 34 assertions: no network, no model calls
 ./scripts/compat-check.sh    # boots a spare instance on 3099 and asks its API
