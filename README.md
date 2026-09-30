@@ -2,6 +2,10 @@
 
 **English** | [Русский](README.ru.md)
 
+[![npm](https://img.shields.io/npm/v/dsh-context-governor)](https://www.npmjs.com/package/dsh-context-governor)
+[![CI](https://github.com/mpinaev/dsh-context-governor/actions/workflows/ci.yml/badge.svg)](https://github.com/mpinaev/dsh-context-governor/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/dsh-context-governor)](LICENSE)
+
 A DeepSeek Harness plugin: a session context indicator — prompt size, step cost,
 cache-hit, bands and the compaction threshold, DeepSeek balance and the
 peak/off-peak tariff, plus a handoff button.
@@ -28,7 +32,7 @@ and fetches the balance over HTTP.
 
 ## Install
 
-As a package (once published):
+As a package:
 
 ```sh
 dsh plugin --profile web add dsh-context-governor

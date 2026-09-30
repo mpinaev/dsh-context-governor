@@ -26,7 +26,7 @@ plugin mounts twice.
 ## Checks before a pull request
 
 ```sh
-npm test              # 34 assertions, no network, no model calls
+npm test              # smoke test, no network, no model calls
 npm pack --dry-run    # the published file list must stay intended
 ./scripts/compat-check.sh   # boots a spare instance and asks the live API
 ```
@@ -47,4 +47,10 @@ npm pack --dry-run    # the published file list must stay intended
 2. Bump `version` in `package.json` (patch for DSH compatibility, minor for features).
 3. `npm test` and `npm pack --dry-run`.
 4. Commit, tag `vX.Y.Z`, push the tag.
-5. `npm publish --provenance` (or `dsh plugin --profile web add github:mpinaev/dsh-context-governor`).
+5. `npm publish`.
+
+Publishing requires either 2FA on the npm account or a granular access token with
+2FA bypass enabled; npm turns the request down without one of them. `--provenance`
+is deliberately not used here — it needs an OIDC identity that only a supported CI
+system (GitHub Actions, GitLab, CircleCI) can provide, so a publish from a laptop
+cannot carry it. Releases stay unsigned until a release workflow exists.

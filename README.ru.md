@@ -2,6 +2,10 @@
 
 [English](README.md) | **Русский**
 
+[![npm](https://img.shields.io/npm/v/dsh-context-governor)](https://www.npmjs.com/package/dsh-context-governor)
+[![CI](https://github.com/mpinaev/dsh-context-governor/actions/workflows/ci.yml/badge.svg)](https://github.com/mpinaev/dsh-context-governor/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/dsh-context-governor)](LICENSE)
+
 Плагин DeepSeek Harness: индикатор контекста сессии — размер prompt, цена шага,
 cache-hit, полосы и порог компакции, баланс DeepSeek и тариф, кнопка handoff.
 
@@ -27,7 +31,7 @@ HTTP.
 
 ## Установка
 
-Пакетом (когда опубликован):
+Пакетом:
 
 ```sh
 dsh plugin --profile web add dsh-context-governor
