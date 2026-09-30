@@ -48,11 +48,17 @@ npm pack --dry-run    # the published file list must stay intended
    features) **and** in the `version` assertion of `test/smoke.mjs`, which pins
    the released version on purpose.
 3. `npm test` and `npm pack --dry-run`.
-4. Commit, tag `vX.Y.Z`, push the tag.
-5. `npm publish`.
+4. Commit, and push `main` and the tag.
 
-Publishing requires either 2FA on the npm account or a granular access token with
-2FA bypass enabled; npm turns the request down without one of them. `--provenance`
-is deliberately not used here — it needs an OIDC identity that only a supported CI
-system (GitHub Actions, GitLab, CircleCI) can provide, so a publish from a laptop
-cannot carry it. Releases stay unsigned until a release workflow exists.
+Pushing the tag **is** the release: `.github/workflows/publish.yml` runs the smoke
+test, checks that the tag matches `package.json`, and publishes through npm trusted
+publishing — so no token is stored in this repository, in Actions secrets, or on
+anyone's machine. npm attaches provenance attestations on its own; do not pass
+`--provenance`.
+
+This relies on a trusted publisher configured once on npmjs.com for the package:
+GitHub Actions, repository `mpinaev/dsh-context-governor`, workflow file
+`publish.yml`, permission "Allow npm publish".
+
+Publishing by hand from a laptop still works, but only with a token that has 2FA
+bypass enabled — and npm retires that path for direct publishing in January 2027.

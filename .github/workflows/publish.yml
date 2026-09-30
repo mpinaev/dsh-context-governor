@@ -1,0 +1,44 @@
+name: Publish
+
+# Publishes a tagged version through npm trusted publishing (OIDC). No token is
+# stored in this repository, in Actions secrets, or on anyone's machine.
+#
+# Requires a trusted publisher configured once on npmjs.com for this package:
+# GitHub Actions, repository mpinaev/dsh-context-governor, workflow file
+# publish.yml, with the "Allow npm publish" permission.
+#
+# npm generates provenance attestations automatically for trusted publishing —
+# do not add --provenance here.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      # The tag names the release; a mismatch would publish one version under
+      # another version's name, which is not recoverable.
+      - name: The tag must match the package version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version v$version"
+            exit 1
+          fi
+      - name: Smoke test
+        run: npm test
+      - name: Publish to npm
+        run: npm publish
