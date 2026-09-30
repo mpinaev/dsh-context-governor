@@ -170,7 +170,7 @@ const HANDOFF = {
   en: {
     noTarget: 'Session context is unknown — start a new session and describe the task again.',
     title: '# Handoff from the previous session',
-    context: function (cur) { return 'Context: ' + cur.prompt + ' tokens (band ' + cur.band + ', fresh ' + cur.fresh + ', cache-hit ' + cur.cacheHitPct + '%, ~$' + cur.costUsd + ' per step).' },
+    context: function (cur) { return 'Context: ' + cur.prompt + ' tokens (band ' + cur.band + ', fresh ' + cur.fresh + ', cache-hit ' + cur.cacheHitText + '%, ~$' + cur.costUsd + ' per step).' },
     noContext: 'Context: no request data in this session (plugin started recently).',
     children: function (n, tokens) { return 'Child sessions: ' + n + ', still holding ' + tokens + ' tokens.' },
     task: 'Task: ',
@@ -184,7 +184,7 @@ const HANDOFF = {
   zh: {
     noTarget: '会话上下文未知 — 请新建会话并重新描述任务。',
     title: '# 来自上一会话的交接',
-    context: function (cur) { return '上下文：' + cur.prompt + ' tokens（档位 ' + cur.band + '，新输入 ' + cur.fresh + '，缓存命中 ' + cur.cacheHitPct + '%，约 $' + cur.costUsd + '/步）。' },
+    context: function (cur) { return '上下文：' + cur.prompt + ' tokens（档位 ' + cur.band + '，新输入 ' + cur.fresh + '，缓存命中 ' + cur.cacheHitText + '%，约 $' + cur.costUsd + '/步）。' },
     noContext: '上下文：本会话没有请求数据（插件刚启动）。',
     children: function (n, tokens) { return '子会话：' + n + ' 个，另占约 ' + tokens + ' tokens。' },
     task: '任务：',
@@ -198,7 +198,7 @@ const HANDOFF = {
   ru: {
     noTarget: 'Контекст сессии неизвестен — начни новую сессию и опиши задачу заново.',
     title: '# Handoff из предыдущей сессии',
-    context: function (cur) { return 'Контекст: ' + cur.prompt + ' токенов (полоса ' + cur.band + ', свежих ' + cur.fresh + ', cache-hit ' + cur.cacheHitPct + '%, ~$' + cur.costUsd + ' за шаг).' },
+    context: function (cur) { return 'Контекст: ' + cur.prompt + ' токенов (полоса ' + cur.band + ', свежих ' + cur.fresh + ', cache-hit ' + cur.cacheHitText + '%, ~$' + cur.costUsd + ' за шаг).' },
     noContext: 'Контекст: нет данных о запросах в этой сессии (плагин запущен недавно).',
     children: function (n, tokens) { return 'Дочерних сессий: ' + n + ', суммарно ещё ' + tokens + ' токенов.' },
     task: 'Задача: ',
@@ -217,6 +217,71 @@ function normalizeLang(lang) {
   if (value === 'ru') return 'ru'
   if (value === 'zh' || value === 'cn' || value === 'zh-cn') return 'zh'
   return 'en'
+}
+
+/* ── Cache-hit: честный процент как у harness ────────────────────────────────
+   Копия formatCacheHitPercent из @deepseek-ai/dsh-client-ui-chat: частичное
+   попадание нельзя округлять до 100. У DeepSeek 99.97% — норма: 177 свежих
+   токенов на 535k prompt. Math.round превращал их в «100%» и чип врал.
+   Когда целое округление даёт 100, добавляем знаки, пока результат не станет
+   честно меньше 100. Единицы измерения — сотые доли процента при dp=0. */
+function roundedPercentUnits(cacheReadTokens, denominator, decimalPlaces) {
+  const scale = (decimalPlaces === 0 ? 1 : 10) * 100
+  const doubledScale = scale * 2
+  const denominatorQuotient = Math.floor(denominator / doubledScale)
+  const denominatorRemainder = denominator % doubledScale
+  let lower = 0
+  let upper = scale
+  while (lower < upper) {
+    const candidate = Math.floor((lower + upper + 1) / 2)
+    const factor = candidate * 2 - 1
+    if (cacheReadTokens >= factor * denominatorQuotient + Math.ceil(factor * denominatorRemainder / doubledScale)) lower = candidate
+    else upper = candidate - 1
+  }
+  return lower
+}
+
+function displayPercentUnits(units, decimalPlaces) {
+  if (decimalPlaces === 0) return String(units)
+  const whole = Math.floor(units / 10)
+  const tenths = units % 10
+  return tenths === 0 ? String(whole) : whole + '.' + tenths
+}
+
+/** Готовая доля prompt, отданная из кэша на чтение: '86', '99.8', '100'.
+    null — считать не из чего (пустой prompt). */
+function formatCacheHitPercent(cacheReadTokens, promptTokens, decimalPlaces = 0) {
+  if (promptTokens === 0) return null
+  const missedInputTokens = promptTokens - cacheReadTokens
+  if (missedInputTokens === 0) return '100'
+  const roundedUnits = roundedPercentUnits(cacheReadTokens, promptTokens, decimalPlaces)
+  if (roundedUnits < (decimalPlaces === 0 ? 100 : 1000)) return displayPercentUnits(roundedUnits, decimalPlaces)
+  let distinguishingPlaces = 1
+  let scaledDoubleGap = missedInputTokens * 200
+  const denominatorTens = Math.floor(promptTokens / 10)
+  while (scaledDoubleGap <= denominatorTens) {
+    scaledDoubleGap *= 10
+    distinguishingPlaces += 1
+  }
+  const denominatorOnes = promptTokens % 10
+  let roundedLoss = 5
+  for (let loss = 1; loss < 5; loss += 1) {
+    const factor = loss * 2 + 1
+    const threshold = factor * denominatorTens + Math.floor(factor * denominatorOnes / 10)
+    if (scaledDoubleGap <= threshold) {
+      roundedLoss = loss
+      break
+    }
+  }
+  return '99.' + '9'.repeat(distinguishingPlaces - 1) + (10 - roundedLoss)
+}
+
+/** Целый процент для порогов: 100 — только за полное попадание, иначе максимум
+    99, чтобы дробное попадание не выглядело полным. */
+function cacheHitWholePercent(cacheReadTokens, promptTokens) {
+  if (promptTokens <= 0) return 0
+  if (cacheReadTokens >= promptTokens) return 100
+  return Math.min(99, Math.round((cacheReadTokens / promptTokens) * 100))
 }
 
 export function apply(ctx, config = {}) {
@@ -531,8 +596,9 @@ export function apply(ctx, config = {}) {
     }
   }
 
-  /** Одна запись шага из уже разложенных по ведрам токенов. */
-  function recordStep(sid, buckets) {
+  /** Одна запись шага из уже разложенных по ведрам токенов. sessionBuckets —
+      итоги сессии из проекции harness (для cache-hit), необязательны. */
+  function recordStep(sid, buckets, sessionBuckets) {
     const input = buckets.input || 0
     const cacheRead = buckets.cacheRead || 0
     const cacheWrite = buckets.cacheWrite || 0
@@ -545,6 +611,12 @@ export function apply(ctx, config = {}) {
     const at = new Date()
     const season = seasonAt(at, cfg.peakMultiplier)
     const rate = ratesAt(cfg, season)
+    /* Cache-hit — доля prompt, отданная из кэша на чтение; запись в кэш хитом
+       не является. Считаем по ИТОГАМ сессии, как чип harness («Cache hit»), —
+       иначе последний шаг почти всегда «100%» и цифра расходится с harness.
+       Если итогов нет (свёртка llm/stream), берём сам шаг. */
+    const sum = sessionBuckets || { input: input, cacheRead: cacheRead, cacheWrite: cacheWrite }
+    const sumPrompt = (sum.input || 0) + (sum.cacheRead || 0) + (sum.cacheWrite || 0)
     /* Три входных ведра считаются по СВОИМ ставкам: кэш-чтение в 50x дешевле
        свежего входа, а запись в кэш у DeepSeek стоит как обычный вход. */
     const costUsd = (input * rate.fresh + cacheRead * rate.cacheRead + cacheWrite * rate.cacheWrite + output * rate.output) / 1000000
@@ -556,9 +628,8 @@ export function apply(ctx, config = {}) {
       cacheWrite: cacheWrite,
       output: output,
       freshDelta: prev ? input - prev.fresh : input,
-      /* Cache-hit — доля prompt, отданная из кэша на чтение; запись в кэш
-         хитом не является. */
-      cacheHitPct: prompt > 0 ? Math.round((cacheRead / prompt) * 100) : 0,
+      cacheHitPct: cacheHitWholePercent(sum.cacheRead || 0, sumPrompt),
+      cacheHitText: formatCacheHitPercent(sum.cacheRead || 0, sumPrompt) || '0',
       relative: Math.round(((input + cacheRead * (cfg.cacheReadRate / cfg.freshRate) + cacheWrite * (cfg.cacheWriteRate / cfg.freshRate)) / cfg.base) * 1000) / 1000,
       costUsd: Math.round(costUsd * 1000000) / 1000000,
       band: bandOf(prompt, cap.bands),
@@ -594,16 +665,25 @@ export function apply(ctx, config = {}) {
     if (pressure && Number.isInteger(pressure.contextWindow) && pressure.contextWindow > 0) {
       sessionWindow.set(sid, pressure.contextWindow)
     }
-    const buckets = usage && usage.last && usage.last.buckets
+    /* Проекция отдаёт либо состояние {totals,last}, либо сразу плоские вёдра
+       wire-вида. Шаг нужен для окна и цены, итоги — для честного cache-hit. */
+    const step = usage && usage.last && usage.last.buckets
       ? usage.last.buckets
-      : (usage ? usage.totals : null)
-    if (!buckets) return
+      : (usage && usage.totals ? usage.totals : usage)
+    const totals = usage && usage.totals
+      ? usage.totals
+      : (usage && usage.last ? null : usage)
+    if (!step) return
     recordStep(sid, {
-      input: Number(buckets.uncachedInputTokens) || 0,
-      cacheRead: Number(buckets.cacheReadTokens) || 0,
-      cacheWrite: Number(buckets.cacheWriteTokens) || 0,
-      output: Number(buckets.outputTokens) || 0,
-    })
+      input: Number(step.uncachedInputTokens) || 0,
+      cacheRead: Number(step.cacheReadTokens) || 0,
+      cacheWrite: Number(step.cacheWriteTokens) || 0,
+      output: Number(step.outputTokens) || 0,
+    }, totals ? {
+      input: Number(totals.uncachedInputTokens) || 0,
+      cacheRead: Number(totals.cacheReadTokens) || 0,
+      cacheWrite: Number(totals.cacheWriteTokens) || 0,
+    } : null)
   }
 
   const projectionSvc = projectionsService()

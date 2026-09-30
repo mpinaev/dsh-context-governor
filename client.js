@@ -55,7 +55,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       tipContext: 'Context',
       perStep: 'per step',
       rows: {
-        prompt: 'context (prompt)', fresh: 'fresh input', cacheRead: 'cache read', cacheWrite: 'cache write', cacheHit: 'cache-hit',
+        prompt: 'context (prompt)', fresh: 'fresh input', cacheRead: 'cache read', cacheWrite: 'cache write', cacheHit: 'cache-hit (session)',
         output: 'output per step', cold: 'cold input per step', cost: 'step cost',
         relative: 'relative to base', window: 'model window', windowSource: 'window source',
         threshold: 'compaction threshold', reserve: 'output reserve', band: 'band',
@@ -108,7 +108,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       tipContext: '上下文',
       perStep: '每步',
       rows: {
-        prompt: '上下文 (prompt)', fresh: '新输入', cacheRead: '缓存读取', cacheWrite: '缓存写入', cacheHit: '缓存命中',
+        prompt: '上下文 (prompt)', fresh: '新输入', cacheRead: '缓存读取', cacheWrite: '缓存写入', cacheHit: '缓存命中（会话）',
         output: '本步输出', cold: '本步冷输入', cost: '本步花费',
         relative: '相对基准', window: '模型窗口', windowSource: '窗口来源',
         threshold: '压缩阈值', reserve: '输出预留', band: '档位',
@@ -160,7 +160,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       tipContext: 'Контекст',
       perStep: 'за шаг',
       rows: {
-        prompt: 'контекст (prompt)', fresh: 'свежий вход', cacheRead: 'кэш-чтение', cacheWrite: 'запись в кэш', cacheHit: 'cache-hit',
+        prompt: 'контекст (prompt)', fresh: 'свежий вход', cacheRead: 'кэш-чтение', cacheWrite: 'запись в кэш', cacheHit: 'cache-hit (сессия)',
         output: 'output за шаг', cold: 'холодный вход за шаг', cost: 'стоимость шага',
         relative: 'относительно базы', window: 'окно модели', windowSource: 'источник окна',
         threshold: 'порог компакции', reserve: 'резерв вывода', band: 'полоса',
@@ -301,6 +301,15 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     return (M.windowSources && M.windowSources[code]) || String(code)
   }
 
+  /** Cache-hit показываем по ИТОГАМ сессии — как чип harness («Cache hit»), —
+      и берём готовый честный текст хоста: частичное попадание (99.97%) не
+      округляется до 100. Фолбэк — целое число, если хост старый. */
+  function cacheHitLabel(cur, M) {
+    if (!cur) return M.dash
+    if (cur.cacheHitText) return cur.cacheHitText + '%'
+    return (cur.cacheHitPct || 0) + '%'
+  }
+
   function balanceStateText(bal, M) {
     if (!bal) return M.dash
     if (bal.ok) return fmtMoney(bal) + ' ' + bal.currency + (bal.isAvailable === false ? ' (' + M.unavailable + ')' : '')
@@ -401,7 +410,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     var balText = fmtMoney(bal)
     var seasonText = season ? (season.peak ? '⚡' + season.countdown : '🌙' + season.countdown) : ''
     var label = cur
-      ? M.ctx + ' ' + fmtTok(cur.prompt) + ' · $' + fmtUsd(cur.costUsd) + ' · ' + cur.cacheHitPct + '%' + kidsNote
+      ? M.ctx + ' ' + fmtTok(cur.prompt) + ' · $' + fmtUsd(cur.costUsd) + ' · ' + cacheHitLabel(cur, M) + kidsNote
       : M.ctx + ' ' + M.dash
     var tipParts = cur
       ? [
@@ -409,6 +418,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
           M.rows.fresh + ' ' + cur.fresh,
           M.rows.cacheRead + ' ' + cur.cacheRead,
           M.rows.cacheWrite + ' ' + cur.cacheWrite,
+          M.rows.cacheHit + ' ' + cacheHitLabel(cur, M),
           '~$' + cur.costUsd + ' ' + M.perStep + ' (x' + cur.relative + ' ' + M.rows.relative + ' ' + (cfgInfo.base || '') + ')',
         ]
       : []
@@ -439,7 +449,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
             [M.rows.fresh, cur.fresh],
             [M.rows.cacheRead, cur.cacheRead],
             [M.rows.cacheWrite, cur.cacheWrite],
-            [M.rows.cacheHit, cur.cacheHitPct + '%'],
+            [M.rows.cacheHit, cacheHitLabel(cur, M)],
             [M.rows.output, cur.output],
             [M.rows.cold, '+' + cur.freshDelta],
             [M.rows.cost, '~$' + fmtUsd(cur.costUsd)],

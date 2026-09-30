@@ -85,7 +85,11 @@ function feedSession(harness, session, spec) {
   if (spec.window) {
     harness.state.pressure[session.header.id] = { contextWindow: spec.window, pressureTokens: spec.pressureTokens || 0 }
   }
-  harness.state.usage[session.header.id] = { last: { buckets: spec.buckets } }
+  harness.state.usage[session.header.id] = {
+    /* Проекция отдаёт и итоги сессии, и последний шаг. Итоги — для cache-hit. */
+    totals: spec.totals || spec.buckets,
+    last: { buckets: spec.buckets },
+  }
   harness.state.onChange(session, 'tokenUsage', {}, 1)
 }
 
@@ -146,6 +150,7 @@ async function main() {
   eq('buckets are split', c.current.cacheRead + '/' + c.current.cacheWrite, '900/50')
   eq('prompt', c.current.prompt, 1050)
   eq('cache-hit counts reads only', c.current.cacheHitPct, 86)
+  eq('cache-hit text for a plain ratio', c.current.cacheHitText, '86')
   eq('step cost', c.current.costUsd, 0.000037)
   eq('relative to base', c.current.relative, 0.002)
   eq('balance hidden off DeepSeek', c.balance.state, 'other-provider')
@@ -156,6 +161,36 @@ async function main() {
   const d = await statusOf(h, 'sess-deepseek')
   eq('deepseek threshold', d.config.compactThreshold, 678464)
   ok('deepseek balance is attempted', d.balance.state === 'no-credential', JSON.stringify(d.balance))
+
+  console.log('cache-hit: session scope, honest percent')
+  /* Живой случай: последний шаг 534912/535089 = 99.97% (старый Math.round давал
+     «100%»), а по итогам сессии — 99.80%, как показывает сам harness. */
+  const mixed = { header: { id: 'sess-mixed' } }
+  feedSession(h, mixed, {
+    provider: 'deepseek-official',
+    model: 'deepseek-flash',
+    maxTokens: 256000,
+    window: 1000000,
+    buckets: { uncachedInputTokens: 177, cacheReadTokens: 534912, cacheWriteTokens: 0, outputTokens: 705 },
+    totals: { uncachedInputTokens: 199241, cacheReadTokens: 100769408, cacheWriteTokens: 0, outputTokens: 366594 },
+  })
+  await tick()
+  const mix = await statusOf(h, 'sess-mixed')
+  eq('context stays the last step', mix.current.prompt, 535089)
+  eq('cache-hit uses session totals', mix.current.cacheHitPct, 99)
+  eq('partial hit is never rounded to 100', mix.current.cacheHitText, '99.8')
+
+  const full = { header: { id: 'sess-full' } }
+  feedSession(h, full, {
+    provider: 'deepseek-official',
+    model: 'deepseek-flash',
+    maxTokens: 256000,
+    window: 1000000,
+    buckets: { uncachedInputTokens: 0, cacheReadTokens: 5000, cacheWriteTokens: 0, outputTokens: 10 },
+  })
+  await tick()
+  const f = await statusOf(h, 'sess-full')
+  eq('a full hit is exactly 100', f.current.cacheHitText, '100')
 
   console.log('unknown window')
   const h2 = makeHarness({ llm: false })
@@ -196,7 +231,7 @@ async function main() {
 
   console.log('client bundle')
   ok('module loader format', clientSource.includes('__ModuleLoader__'))
-  for (const marker of ['uiIdentity', 'cacheRead', 'cacheWrite', 'other-provider', 'windowSources']) {
+  for (const marker of ['uiIdentity', 'cacheRead', 'cacheWrite', 'other-provider', 'windowSources', 'cacheHitText']) {
     ok('client has ' + marker, clientSource.includes(marker))
   }
   ok('client has no stale fallback bands', !clientSource.includes('temporary bands') && !clientSource.includes('полосы временные'))

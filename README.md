@@ -86,7 +86,7 @@ Rules and the release flow live in [CONTRIBUTING.md](CONTRIBUTING.md).
 - prompt size (uncached input + cache tokens) and an **estimated step cost in USD**;
 - a cost multiplier relative to `base` (fresh input = 1.0, cache read =
   `cacheReadRate/freshRate`, about 0.02 for deepseek-flash);
-- cache-hit, %;
+- cache-hit over the session totals, % (a partial hit is never rounded up to 100);
 - cold input per step (fresh tokens in the last request);
 - a band: 0 = normal, 1 = warn, 2 = high, 3 = critical;
 - **DeepSeek balance** (numbers only; the key never reaches the client);
@@ -108,6 +108,11 @@ provider's authoritative numbers: they survive paging and compaction and close t
 slot correctly on a retry (`llm/retry-started`), so a repeated attempt does not
 double count. Without projections in the build, the plugin falls back to its own
 fold of `llm/stream`.
+
+Cache-hit is computed from the session totals, not from the last step alone, so
+it agrees with the harness cache-hit pill. A partial hit is never rounded up to
+100 — extra decimals are added instead, and only a miss-free hit shows exactly
+`100%`.
 
 **Window and threshold.** The model window and pressure come from the
 `contextPressure` projection (`contextWindow`, `pressureTokens`); the output

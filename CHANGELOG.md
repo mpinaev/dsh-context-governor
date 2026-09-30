@@ -2,6 +2,11 @@
 
 ## 0.2.1
 
+- Cache-hit is now computed from the session totals and formatted like the
+  harness: a partial hit is never rounded up to 100. Previously the last step was
+  rounded with `Math.round`, so a session at 99.8% showed `100%` while the
+  harness showed `99.8%`. The panel row is labelled "cache-hit (session)" and the
+  status payload carries a display-ready `cacheHitText`.
 - The `windowSource` field in the status payload is now a stable code
   (`catalog` / `request`) instead of a Russian phrase, and the client renders it
   in the selected language. Previously "каталог" and "резолв запроса" stayed
