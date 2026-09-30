@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+- The `windowSource` field in the status payload is now a stable code
+  (`catalog` / `request`) instead of a Russian phrase, and the client renders it
+  in the selected language. Previously "каталог" and "резолв запроса" stayed
+  Russian in the English and Chinese interfaces.
+
 ## 0.2.0
 
 - Token usage now comes from the harness projection `tokenUsage`

@@ -62,6 +62,8 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         tariff: 'tariff', tariffFlip: 'flips in', beijing: 'Beijing time',
         rates: 'rates $/1M', balance: 'balance',
       },
+      /* Значения строки «window source»: host отдаёт код, текст выбирает язык. */
+      windowSources: { catalog: 'model catalog', request: 'route resolve' },
       season: { peak: 'peak', off: 'off-peak' },
       balanceState: { disabled: 'disabled', 'no-credential': 'no API key', error: 'error', empty: 'empty', 'other-provider': 'DeepSeek only' },
       ratesFmt: function (r) { return 'in ' + r.fresh + ', cache-read ' + r.cacheRead + ', cache-write ' + r.cacheWrite + ', out ' + r.output },
@@ -113,6 +115,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         tariff: '费率', tariffFlip: '距切换', beijing: '北京时间',
         rates: '费率 $/1M', balance: '余额',
       },
+      windowSources: { catalog: '模型目录', request: '路由解析' },
       season: { peak: '高峰', off: '低谷' },
       balanceState: { disabled: '已关闭', 'no-credential': '未配置 API 密钥', error: '错误', empty: '空响应', 'other-provider': '仅限 DeepSeek' },
       ratesFmt: function (r) { return '输入 ' + r.fresh + '，缓存读 ' + r.cacheRead + '，缓存写 ' + r.cacheWrite + '，输出 ' + r.output },
@@ -164,6 +167,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         tariff: 'тариф', tariffFlip: 'до смены тарифа', beijing: 'время Пекина',
         rates: 'ставки $/1M', balance: 'баланс',
       },
+      windowSources: { catalog: 'каталог моделей', request: 'резолв маршрута' },
       season: { peak: 'пик', off: 'off-peak' },
       balanceState: { disabled: 'выключен', 'no-credential': 'нет API-ключа', error: 'ошибка', empty: 'пустой ответ', 'other-provider': 'только для DeepSeek' },
       ratesFmt: function (r) { return 'вход ' + r.fresh + ', чтение ' + r.cacheRead + ', запись ' + r.cacheWrite + ', output ' + r.output },
@@ -288,6 +292,13 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
   function seasonTitleText(season, M, lang) {
     if (!season) return ''
     return M.seasonTitle(season, weekdayName(season, M, lang), season.beijing ? season.beijing.clock : '')
+  }
+
+  /** Источник окна модели приходит кодом (host языка не знает): текст берём
+      из словаря языка, неизвестный код показываем как есть — не терять диагностику. */
+  function windowSourceText(code, M) {
+    if (!code) return M.dash
+    return (M.windowSources && M.windowSources[code]) || String(code)
   }
 
   function balanceStateText(bal, M) {
@@ -434,7 +445,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
             [M.rows.cost, '~$' + fmtUsd(cur.costUsd)],
             [M.rows.relative + ' ' + fmtTok(cfgInfo.base || 0), 'x' + cur.relative],
             [M.rows.window, cfgInfo.windowTokens ? fmtTok(cfgInfo.windowTokens) + ' (' + (cfgInfo.route || '?') + ')' : M.unknown],
-            [M.rows.windowSource, cfgInfo.windowSource || M.dash],
+            [M.rows.windowSource, windowSourceText(cfgInfo.windowSource, M)],
             [M.rows.threshold, cfgInfo.compactThreshold ? cfgInfo.compactThreshold : M.dash],
             [M.rows.reserve, cfgInfo.reservedTokens ? cfgInfo.reservedTokens : M.dash],
             [M.rows.band, M.band[band] + ' (' + band + ')'],

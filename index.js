@@ -466,7 +466,9 @@ export function apply(ctx, config = {}) {
         const patch = {
           window: known && known.window > 0 ? 0 : window,
           reserved: known && known.reserved > 0 ? 0 : reserved,
-          source: 'каталог',
+          /* Источник — стабильный код, а не готовый текст: язык выбирает
+             клиент, иначе «каталог» остаётся русским в en и zh. */
+          source: 'catalog',
         }
         mergeRoute(provider, model, patch)
         const merged = routes.get(routeKey(provider, model))
@@ -492,7 +494,7 @@ export function apply(ctx, config = {}) {
         }
         mergeRoute(data.provider, data.model, {
           window: Number.isInteger(data.contextWindow) ? data.contextWindow : 0,
-          source: 'резолв запроса',
+          source: 'request',
         })
       }
       return
@@ -508,7 +510,7 @@ export function apply(ctx, config = {}) {
       }
       mergeRoute(provider, model, {
         reserved: Number.isInteger(config.maxTokens) ? config.maxTokens : 0,
-        source: 'резолв запроса',
+        source: 'request',
       })
       resolveRouteFromCatalog(provider, model)
     }

@@ -106,7 +106,7 @@ async function main() {
 
   console.log('manifest')
   eq('name', mod.name, 'dsh-context-governor')
-  eq('version', manifest.version, '0.2.0')
+  eq('version', manifest.version, '0.2.1')
   eq('not private', manifest.private, undefined)
   eq('bundle patch declared', manifest.dsh.bundle.patch, './cordis.patch.yml')
   ok('version gate declared', typeof manifest.peerDependencies['@deepseek-ai/dsh-session-projection'] === 'string')
@@ -140,6 +140,9 @@ async function main() {
   eq('cline threshold', c.config.compactThreshold, 126272)
   eq('cline route', c.config.route, 'cline/inclusionai/ling-3.0-flash-sante:free')
   eq('cline provider', c.config.provider, 'cline')
+  /* Источник окна — код для клиента, не готовый русский текст: иначе значение
+     не переводится в en и zh. */
+  eq('window source is a code', c.config.windowSource, 'catalog')
   eq('buckets are split', c.current.cacheRead + '/' + c.current.cacheWrite, '900/50')
   eq('prompt', c.current.prompt, 1050)
   eq('cache-hit counts reads only', c.current.cacheHitPct, 86)
@@ -168,6 +171,7 @@ async function main() {
   const u = await statusOf(h2, 'sess-bare')
   eq('no invented threshold', u.config.compactThreshold, 0)
   eq('no invented window', u.config.windowTokens, 0)
+  eq('request source is a code', u.config.windowSource, 'request')
   ok('windowUnknown warning', u.warnings.some((w) => w.code === 'windowUnknown'), JSON.stringify(u.warnings))
   eq('balance still gated', u.balance.state, 'other-provider')
 
@@ -192,7 +196,7 @@ async function main() {
 
   console.log('client bundle')
   ok('module loader format', clientSource.includes('__ModuleLoader__'))
-  for (const marker of ['uiIdentity', 'cacheRead', 'cacheWrite', 'other-provider']) {
+  for (const marker of ['uiIdentity', 'cacheRead', 'cacheWrite', 'other-provider', 'windowSources']) {
     ok('client has ' + marker, clientSource.includes(marker))
   }
   ok('client has no stale fallback bands', !clientSource.includes('temporary bands') && !clientSource.includes('полосы временные'))
