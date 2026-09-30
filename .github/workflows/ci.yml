@@ -40,6 +40,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # `dsh plugin` shells out to pnpm; the runner image does not ship one.
+      - name: Install pnpm
+        run: npm install -g pnpm@12
       - name: Install the newest DSH
         run: npm install -g @deepseek-ai/dsh@next
       - name: Mount the plugin into a throwaway profile
