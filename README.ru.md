@@ -11,6 +11,19 @@ cache-hit, полосы и порог компакции, баланс DeepSeek 
 
 **Плагин не вызывает модель и не тратит ни одного токена** — подробности ниже.
 
+## Как это выглядит
+
+Чип в шапке сессии раскрывает панель. Одна и та же панель доступна на английском,
+китайском и русском:
+
+| English | 中文 | Русский |
+|---|---|---|
+| ![Панель контекста сессии (English)](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-1.png) | ![会话上下文面板（中文）](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-2.png) | ![Панель контекста сессии (русский)](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-3.png) |
+
+Кнопка handoff стоит рядом с выбором модели:
+
+![Кнопка handoff](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-4.png)
+
 ## Не тратит токены и не вызывает модель
 
 Всё, что показывает плагин, — это **измерение и арифметика**. Он читает токены и

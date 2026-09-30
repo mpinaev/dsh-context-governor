@@ -12,6 +12,19 @@ peak/off-peak tariff, plus a handoff button.
 
 **It never calls a model and spends no tokens at all** — details below.
 
+## What it looks like
+
+The chip in the session header opens the panel below. The same panel is available
+in English, Chinese and Russian:
+
+| English | 中文 | Русский |
+|---|---|---|
+| ![Session context panel in English](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-1.png) | ![会话上下文面板（中文）](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-2.png) | ![Панель контекста сессии (русский)](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-3.png) |
+
+The handoff button sits next to the model selector:
+
+![Handoff button](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-4.png)
+
 ## No tokens, no model calls
 
 Everything the plugin shows is **measurement and arithmetic**. It reads tokens and
