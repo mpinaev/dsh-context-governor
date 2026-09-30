@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.3
+
+- Documentation release, no code changes. The npm page renders the README from
+  the published tarball rather than from the repository, so badges, screenshots
+  and the corrected install section only reach it with a new version.
+- Screenshots of the panel in all three UI languages (English, Chinese, Russian)
+  and of the handoff button, shown in both READMEs.
+- `screenshots.json` declares those images for storefronts such as dsh-market and
+  the plugin catalog, which read them straight from this repository — the order
+  is set here instead of being extracted from the README.
+- The install section no longer says "once published", and the release steps in
+  `CONTRIBUTING.md` no longer instruct a local `--provenance` publish, which
+  needs a CI OIDC identity. They now also mention that `test/smoke.mjs` pins the
+  released version and has to be bumped alongside `package.json` — the omission
+  is what a version bump without it fails on.
+
 ## 0.2.2
 
 - Do not invent prices for providers the plugin has no rates for. DSH does not

@@ -44,7 +44,9 @@ npm pack --dry-run    # the published file list must stay intended
 ## Releases
 
 1. Move entries from the unreleased section of `CHANGELOG.md` under the new version.
-2. Bump `version` in `package.json` (patch for DSH compatibility, minor for features).
+2. Bump `version` in `package.json` (patch for DSH compatibility, minor for
+   features) **and** in the `version` assertion of `test/smoke.mjs`, which pins
+   the released version on purpose.
 3. `npm test` and `npm pack --dry-run`.
 4. Commit, tag `vX.Y.Z`, push the tag.
 5. `npm publish`.

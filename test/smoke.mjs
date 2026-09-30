@@ -110,7 +110,7 @@ async function main() {
 
   console.log('manifest')
   eq('name', mod.name, 'dsh-context-governor')
-  eq('version', manifest.version, '0.2.2')
+  eq('version', manifest.version, '0.2.3')
   eq('not private', manifest.private, undefined)
   eq('bundle patch declared', manifest.dsh.bundle.patch, './cordis.patch.yml')
   ok('version gate declared', typeof manifest.peerDependencies['@deepseek-ai/dsh-session-projection'] === 'string')
