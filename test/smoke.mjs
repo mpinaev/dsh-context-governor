@@ -110,7 +110,7 @@ async function main() {
 
   console.log('manifest')
   eq('name', mod.name, 'dsh-context-governor')
-  eq('version', manifest.version, '0.2.1')
+  eq('version', manifest.version, '0.2.2')
   eq('not private', manifest.private, undefined)
   eq('bundle patch declared', manifest.dsh.bundle.patch, './cordis.patch.yml')
   ok('version gate declared', typeof manifest.peerDependencies['@deepseek-ai/dsh-session-projection'] === 'string')
@@ -151,8 +151,12 @@ async function main() {
   eq('prompt', c.current.prompt, 1050)
   eq('cache-hit counts reads only', c.current.cacheHitPct, 86)
   eq('cache-hit text for a plain ratio', c.current.cacheHitText, '86')
-  eq('step cost', c.current.costUsd, 0.000037)
-  eq('relative to base', c.current.relative, 0.002)
+  /* DSH не отдаёт токен-цены ни моделям, ни провайдерам: для Cline плагин не
+     выдумывает deepseek-тариф, а пишет, что цена неизвестна. */
+  eq('cline price is unknown to plugin', c.current.costUsd, null)
+  eq('cline relative is unknown', c.current.relative, null)
+  ok('peak/off-peak shown even for cline', c.season !== null)
+  eq('cline rates hidden', c.rates, null)
   eq('balance hidden off DeepSeek', c.balance.state, 'other-provider')
   eq('balance names the provider', c.balance.provider, 'cline')
   ok('response carries no dead fields',
@@ -227,11 +231,11 @@ async function main() {
   for await (const _chunk of tracked) { /* drain */ }
   const s = await statusOf(h3, 'sess-stream')
   eq('fallback buckets', s.current.cacheRead + '/' + s.current.cacheWrite, '900/50')
-  eq('fallback cost', s.current.costUsd, 0.000037)
+  eq('fallback cost', s.current.costUsd, null)
 
   console.log('client bundle')
   ok('module loader format', clientSource.includes('__ModuleLoader__'))
-  for (const marker of ['uiIdentity', 'cacheRead', 'cacheWrite', 'other-provider', 'windowSources', 'cacheHitText']) {
+  for (const marker of ['uiIdentity', 'cacheRead', 'cacheWrite', 'other-provider', 'windowSources', 'cacheHitText', 'noPrice', 'balanceUnknown']) {
     ok('client has ' + marker, clientSource.includes(marker))
   }
   ok('client has no stale fallback bands', !clientSource.includes('temporary bands') && !clientSource.includes('полосы временные'))

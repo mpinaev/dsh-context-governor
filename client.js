@@ -52,6 +52,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       dash: '—',
       unavailable: 'unavailable',
       noData: 'No data',
+      noPrice: 'price unavailable',
       tipContext: 'Context',
       perStep: 'per step',
       rows: {
@@ -81,7 +82,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       langTip: function (cur, next) { return 'Language: ' + cur + ' → ' + next },
       warnings: {
         cacheHitLow: function (w) { return 'cache-hit ' + w.pct + '% stays below ' + w.floor + '%: input is paid as fresh' },
-        coldPrefill: function (w) { return 'cold prefill ' + w.fresh + ' fresh tokens (≈$' + w.usd + ')' },
+        coldPrefill: function (w) { return 'cold prefill ' + w.fresh + ' fresh tokens' + (w.usd != null ? ' (≈$' + w.usd + ')' : '') },
         expensiveStep: function (w) { return 'expensive step: ~$' + w.usd },
         nearCompaction: function (w) { return 'context ' + w.prompt + ' is nearing the auto-compaction threshold ' + w.threshold + ': the next step rewrites the prefix and resets the cache' },
         windowUnknown: function () { return 'model window unknown — waiting for the route to resolve' },
@@ -105,6 +106,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       dash: '—',
       unavailable: '不可用',
       noData: '无数据',
+      noPrice: '价格未知',
       tipContext: '上下文',
       perStep: '每步',
       rows: {
@@ -133,7 +135,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       langTip: function (cur, next) { return '语言：' + cur + ' → ' + next },
       warnings: {
         cacheHitLow: function (w) { return '缓存命中 ' + w.pct + '% 持续低于 ' + w.floor + '%：输入按新输入计价' },
-        coldPrefill: function (w) { return '冷预填 ' + w.fresh + ' 个新 token（约 $' + w.usd + '）' },
+        coldPrefill: function (w) { return '冷预填 ' + w.fresh + ' 个新 token' + (w.usd != null ? '（约 $' + w.usd + '）' : '') },
         expensiveStep: function (w) { return '本步较贵：约 $' + w.usd },
         nearCompaction: function (w) { return '上下文 ' + w.prompt + ' 接近自动压缩阈值 ' + w.threshold + '：下一步会重写前缀并清空缓存' },
         windowUnknown: function () { return '模型窗口未知 — 等待路由解析' },
@@ -157,6 +159,8 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       dash: '—',
       unavailable: 'недоступен',
       noData: 'Нет данных',
+      noPrice: 'цена неизвестна',
+      balanceUnknown: 'баланс неизвестен (не DeepSeek)',
       tipContext: 'Контекст',
       perStep: 'за шаг',
       rows: {
@@ -185,7 +189,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       langTip: function (cur, next) { return 'Язык: ' + cur + ' → ' + next },
       warnings: {
         cacheHitLow: function (w) { return 'cache-hit ' + w.pct + '% — держится ниже ' + w.floor + '%: вход переплачивается как свежий' },
-        coldPrefill: function (w) { return 'холодный префилл ' + w.fresh + ' свежих токенов (≈$' + w.usd + ')' },
+        coldPrefill: function (w) { return 'холодный префилл ' + w.fresh + ' свежих токенов' + (w.usd != null ? ' (≈$' + w.usd + ')' : '') },
         expensiveStep: function (w) { return 'дорогой шаг: ~$' + w.usd },
         nearCompaction: function (w) { return 'контекст ' + w.prompt + ' подходит к порогу авто-компакции ' + w.threshold + ': следующий шаг перепишет префикс и обнулит кэш' },
         windowUnknown: function () { return 'окно модели неизвестно — ждём резолв маршрута' },
@@ -311,8 +315,9 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
   }
 
   function balanceStateText(bal, M) {
-    if (!bal) return M.dash
+    if (!bal) return M.noData
     if (bal.ok) return fmtMoney(bal) + ' ' + bal.currency + (bal.isAvailable === false ? ' (' + M.unavailable + ')' : '')
+    if (bal.state === 'other-provider') return M.balanceUnknown
     var text = M.balanceState[bal.state] || String(bal.state || '')
     if (bal.state === 'error' && bal.error) text += ': ' + bal.error
     return text
@@ -407,10 +412,13 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     var kidsNote = kids.length > 0 ? ' · ' + M.kids + ' ' + kids.length : ''
     var season = data && data.season ? data.season : null
     var bal = data && data.balance ? data.balance : null
-    var balText = fmtMoney(bal)
+    /* Цена — только если host удалось посчитать (DeepSeek). Иначе «цена неизвестна». */
+    var knownPrice = cur && cur.costUsd != null
+    var costText = knownPrice ? ('$' + fmtUsd(cur.costUsd)) : M.noPrice
     var seasonText = season ? (season.peak ? '⚡' + season.countdown : '🌙' + season.countdown) : ''
+    var balText = fmtMoney(bal)
     var label = cur
-      ? M.ctx + ' ' + fmtTok(cur.prompt) + ' · $' + fmtUsd(cur.costUsd) + ' · ' + cacheHitLabel(cur, M) + kidsNote
+      ? M.ctx + ' ' + fmtTok(cur.prompt) + ' · ' + costText + ' · ' + cacheHitLabel(cur, M) + kidsNote
       : M.ctx + ' ' + M.dash
     var tipParts = cur
       ? [
@@ -419,7 +427,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
           M.rows.cacheRead + ' ' + cur.cacheRead,
           M.rows.cacheWrite + ' ' + cur.cacheWrite,
           M.rows.cacheHit + ' ' + cacheHitLabel(cur, M),
-          '~$' + cur.costUsd + ' ' + M.perStep + ' (x' + cur.relative + ' ' + M.rows.relative + ' ' + (cfgInfo.base || '') + ')',
+          knownPrice ? ('~$' + fmtUsd(cur.costUsd) + ' ' + M.perStep + ' (x' + cur.relative + ' ' + M.rows.relative + ' ' + (cfgInfo.base || '') + ')') : (M.noPrice + ' ' + M.perStep),
         ]
       : []
     if (cur && cfgInfo.windowTokens) tipParts.push(M.rows.window + ' ' + cfgInfo.windowTokens + ' (' + (cfgInfo.route || '') + ')')
@@ -452,8 +460,8 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
             [M.rows.cacheHit, cacheHitLabel(cur, M)],
             [M.rows.output, cur.output],
             [M.rows.cold, '+' + cur.freshDelta],
-            [M.rows.cost, '~$' + fmtUsd(cur.costUsd)],
-            [M.rows.relative + ' ' + fmtTok(cfgInfo.base || 0), 'x' + cur.relative],
+            [M.rows.cost, knownPrice ? ('~$' + fmtUsd(cur.costUsd)) : M.noPrice],
+            [M.rows.relative + ' ' + fmtTok(cfgInfo.base || 0), knownPrice ? ('x' + cur.relative) : M.noPrice],
             [M.rows.window, cfgInfo.windowTokens ? fmtTok(cfgInfo.windowTokens) + ' (' + (cfgInfo.route || '?') + ')' : M.unknown],
             [M.rows.windowSource, windowSourceText(cfgInfo.windowSource, M)],
             [M.rows.threshold, cfgInfo.compactThreshold ? cfgInfo.compactThreshold : M.dash],
@@ -462,7 +470,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
             [M.rows.tariff, seasonLabelText(season, M)],
             [M.rows.tariffFlip, season ? season.countdown + ' → ' + (season.peak ? M.season.off : M.season.peak) : M.dash],
             [M.rows.beijing, season ? weekdayName(season, M, lang) + ' ' + season.beijing.clock : M.dash],
-            [M.rows.rates, data.rates ? M.ratesFmt(data.rates) : M.dash],
+            [M.rows.rates, data.rates ? M.ratesFmt(data.rates) : M.noPrice],
             [M.rows.balance, balanceStateText(bal, M)],
           ]
         : [[M.tipContext, M.noData]]

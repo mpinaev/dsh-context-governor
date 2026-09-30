@@ -83,7 +83,8 @@ Rules and the release flow live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## What it shows
 
-- prompt size (uncached input + cache tokens) and an **estimated step cost in USD**;
+- prompt size (uncached input + cache tokens) and an **estimated step cost in USD**
+  (DeepSeek only; for other providers the cost is shown as *price unavailable*);
 - a cost multiplier relative to `base` (fresh input = 1.0, cache read =
   `cacheReadRate/freshRate`, about 0.02 for deepseek-flash);
 - cache-hit over the session totals, % (a partial hit is never rounded up to 100);
@@ -133,9 +134,18 @@ ordinary input (`cacheWriteRate`, default = `freshRate`). Cache-hit is the
 share of the prompt served from cache **on read**; a cache write does not count as
 a hit.
 
-**Money.** The harness does not compute request cost in dollars, and the provider
-does not report it either. This is the plugin's **estimate**: tokens (from the
-harness) x rates (from config).
+**Money.** Neither DSH nor the provider reports token cost in dollars anywhere, so
+the plugin keeps its own rates table (off by default for providers it does not
+know). The chip/balance logic is therefore:
+
+- the step cost and `relative` multiplier are shown **only where the plugin has
+  rates for the provider** — today that is DeepSeek (`deepseek-official`, ids
+  starting with `deepseek`). For any other provider (cline, clinebot, OpenRouter,
+  pi-ai, …) the cost is unknown, and the chip/panel write "price unavailable"
+  instead of inventing a number;
+- the peak/off-peak time marker (⚡/🌙) is shown always, because it is just a clock
+  reading, not a per-provider cost.
+
 
 ## Signals
 

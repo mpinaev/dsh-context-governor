@@ -50,6 +50,11 @@ const DEFAULTS = {
   thresholdRatio: 0.8,
   /* Полосы — доли порога компакции (окно - reserved - headroom). */
   bandRatios: [0.35, 0.6, 0.85],
+  /* Провайдеры, для которых плагин знает цены (своя таблица ставок ниже).
+     Цены выплачиваются за токены провайдером, а DSH не отдаёт их — поэтому
+     для чужих провайдеров (Cline, OpenRouter, pi-ai, …) стоимость шага не
+     высчитывается, а плагин пишет «нет данных». */
+  pricedProviders: ['deepseek-official'],
   /* Цены deepseek-flash off-peak, $ за 1M токенов. Кэш-чтение в 50x дешевле
      свежего входа — именно поэтому абсолютный prompt не равен расходу. */
   freshRate: 0.15,
@@ -153,6 +158,17 @@ function seasonAt(at, peakMultiplier) {
   }
 }
 
+/** Тот ли провайдер, для которого плагин знает цены. DSH не отдаёт токен-
+    цены ни в модели, ни в проекции, ни в сервисе — поэтому плагин вынужден
+    поддерживать таблицу ставок себе. Для чужих провайдеров (Cline, OpenRouter,
+    pi-ai, …) цены неизвестны: считать стоимость нельзя, а иначе получится
+    выдумка. id начинается с `deepseek` — тоже наш (deepseek-official). */
+function isPricedProvider(cfg, provider) {
+  const list = Array.isArray(cfg.pricedProviders) ? cfg.pricedProviders : []
+  const p = String(provider || '')
+  return list.indexOf(p) >= 0 || p.split('/')[0] === 'deepseek'
+}
+
 /** Ставки $/1M на момент: off-peak — из конфига, пик — умноженный на сезон. */
 function ratesAt(cfg, season) {
   return {
@@ -170,7 +186,7 @@ const HANDOFF = {
   en: {
     noTarget: 'Session context is unknown — start a new session and describe the task again.',
     title: '# Handoff from the previous session',
-    context: function (cur) { return 'Context: ' + cur.prompt + ' tokens (band ' + cur.band + ', fresh ' + cur.fresh + ', cache-hit ' + cur.cacheHitText + '%, ~$' + cur.costUsd + ' per step).' },
+    context: function (cur) { var cost = cur.costUsd == null ? '—' : ('~$' + cur.costUsd); return 'Context: ' + cur.prompt + ' tokens (band ' + cur.band + ', fresh ' + cur.fresh + ', cache-hit ' + cur.cacheHitText + '%, ' + cost + ' per step).' },
     noContext: 'Context: no request data in this session (plugin started recently).',
     children: function (n, tokens) { return 'Child sessions: ' + n + ', still holding ' + tokens + ' tokens.' },
     task: 'Task: ',
@@ -184,7 +200,7 @@ const HANDOFF = {
   zh: {
     noTarget: '会话上下文未知 — 请新建会话并重新描述任务。',
     title: '# 来自上一会话的交接',
-    context: function (cur) { return '上下文：' + cur.prompt + ' tokens（档位 ' + cur.band + '，新输入 ' + cur.fresh + '，缓存命中 ' + cur.cacheHitText + '%，约 $' + cur.costUsd + '/步）。' },
+    context: function (cur) { var cost = cur.costUsd == null ? '—' : ('约 $' + cur.costUsd); return '上下文：' + cur.prompt + ' tokens（档位 ' + cur.band + '，新输入 ' + cur.fresh + '，缓存命中 ' + cur.cacheHitText + '%，' + cost + '/步）。' },
     noContext: '上下文：本会话没有请求数据（插件刚启动）。',
     children: function (n, tokens) { return '子会话：' + n + ' 个，另占约 ' + tokens + ' tokens。' },
     task: '任务：',
@@ -198,7 +214,7 @@ const HANDOFF = {
   ru: {
     noTarget: 'Контекст сессии неизвестен — начни новую сессию и опиши задачу заново.',
     title: '# Handoff из предыдущей сессии',
-    context: function (cur) { return 'Контекст: ' + cur.prompt + ' токенов (полоса ' + cur.band + ', свежих ' + cur.fresh + ', cache-hit ' + cur.cacheHitText + '%, ~$' + cur.costUsd + ' за шаг).' },
+    context: function (cur) { var cost = cur.costUsd == null ? '—' : ('~$' + cur.costUsd); return 'Контекст: ' + cur.prompt + ' токенов (полоса ' + cur.band + ', свежих ' + cur.fresh + ', cache-hit ' + cur.cacheHitText + '%, ' + cost + ' за шаг).' },
     noContext: 'Контекст: нет данных о запросах в этой сессии (плагин запущен недавно).',
     children: function (n, tokens) { return 'Дочерних сессий: ' + n + ', суммарно ещё ' + tokens + ' токенов.' },
     task: 'Задача: ',
@@ -608,9 +624,14 @@ export function apply(ctx, config = {}) {
     if (!sid || prompt <= 0) return
     const prev = sessions.get(sid)
     const cap = routeCapacity(sid)
+    /* Цена — только для провайдеров с известными ставками (DeepSeek). DSH не
+       отдаёт токен-цены, а для чужих (Cline, OpenRouter, pi-ai, …) их,
+       соответственно, нет и вовсе — считать стоимость нельзя. */
+    const provider = cap.route ? cap.route.split('/')[0] : ''
+    const priced = isPricedProvider(cfg, provider)
     const at = new Date()
-    const season = seasonAt(at, cfg.peakMultiplier)
-    const rate = ratesAt(cfg, season)
+    const season = priced ? seasonAt(at, cfg.peakMultiplier) : null
+    const rate = priced ? ratesAt(cfg, season) : null
     /* Cache-hit — доля prompt, отданная из кэша на чтение; запись в кэш хитом
        не является. Считаем по ИТОГАМ сессии, как чип harness («Cache hit»), —
        иначе последний шаг почти всегда «100%» и цифра расходится с harness.
@@ -619,7 +640,7 @@ export function apply(ctx, config = {}) {
     const sumPrompt = (sum.input || 0) + (sum.cacheRead || 0) + (sum.cacheWrite || 0)
     /* Три входных ведра считаются по СВОИМ ставкам: кэш-чтение в 50x дешевле
        свежего входа, а запись в кэш у DeepSeek стоит как обычный вход. */
-    const costUsd = (input * rate.fresh + cacheRead * rate.cacheRead + cacheWrite * rate.cacheWrite + output * rate.output) / 1000000
+    const costUsd = priced ? (input * rate.fresh + cacheRead * rate.cacheRead + cacheWrite * rate.cacheWrite + output * rate.output) / 1000000 : null
     const rec = {
       session: sid,
       prompt: prompt,
@@ -630,20 +651,20 @@ export function apply(ctx, config = {}) {
       freshDelta: prev ? input - prev.fresh : input,
       cacheHitPct: cacheHitWholePercent(sum.cacheRead || 0, sumPrompt),
       cacheHitText: formatCacheHitPercent(sum.cacheRead || 0, sumPrompt) || '0',
-      relative: Math.round(((input + cacheRead * (cfg.cacheReadRate / cfg.freshRate) + cacheWrite * (cfg.cacheWriteRate / cfg.freshRate)) / cfg.base) * 1000) / 1000,
-      costUsd: Math.round(costUsd * 1000000) / 1000000,
+      relative: priced ? Math.round(((input + cacheRead * (cfg.cacheReadRate / cfg.freshRate) + cacheWrite * (cfg.cacheWriteRate / cfg.freshRate)) / cfg.base) * 1000) / 1000 : null,
+      costUsd: priced ? Math.round(costUsd * 1000000) / 1000000 : null,
       band: bandOf(prompt, cap.bands),
       ts: Date.now(),
     }
     sessions.set(sid, rec)
     const prevBand = prev ? prev.band : 0
     if (rec.band > prevBand) {
-      log('полоса ' + rec.band + ': контекст ' + prompt + ' (x' + rec.relative + ' по цене, ~$' + rec.costUsd + '/шаг), сессия ' + sid)
+      log('полоса ' + rec.band + ': контекст ' + prompt + (priced ? ' (x' + rec.relative + ' по цене, ~$' + rec.costUsd + '/шаг)' : ' (цена неизвестна)') + ', сессия ' + sid)
     }
     if (rec.freshDelta >= cfg.anomalyDelta) {
       log('аномальный свежий вход +' + rec.freshDelta + ' за шаг (контекст ' + prompt + '), сессия ' + sid)
     }
-    if (costUsd >= cfg.anomalyCostUsd) {
+    if (priced && costUsd >= cfg.anomalyCostUsd) {
       log('дорогой шаг $' + rec.costUsd + ' (свежих ' + input + ', чтение ' + cacheRead + ', запись ' + cacheWrite + ', output ' + output + '), сессия ' + sid)
     }
     if (sessions.size > 64) {
@@ -789,8 +810,6 @@ export function apply(ctx, config = {}) {
       children.sort(function (a, b) { return (b.prompt || 0) - (a.prompt || 0) })
     }
     const warnings = []
-    const season = seasonAt(new Date(now), cfg.peakMultiplier)
-    const rates = ratesAt(cfg, season)
     const cap = routeCapacity(current ? current.session : undefined)
     /* Провайдер активной сессии: по нему решаем, показывать ли баланс DeepSeek.
        Если своей сессии ещё нет — берём выбранную модель по умолчанию. */
@@ -805,6 +824,13 @@ export function apply(ctx, config = {}) {
         }
       } catch (error) { /* останется пустым — баланс скрыт */ }
     }
+    /* DSH не отдаёт токен-цены ни моделям, ни провайдерам и не знает тарифов.
+       Поэтому: season (пик/off-peak по расписанию DeepSeek) — всегда показываем
+       (это просто индикатор времени), rates и cost считаются ТОЛЬКО для провайдеров
+       с известными ставками (DeepSeek); для чужих — null, и окно пишет «нет данных». */
+    const priced = isPricedProvider(cfg, activeProvider)
+    const season = seasonAt(new Date(now), cfg.peakMultiplier)
+    const rates = priced ? ratesAt(cfg, season) : null
     if (current) {
       /* Сигналы траты — не размер контекста, а свежие токены и провал кэша:
          при 99% cache-hit абсолютный prompt стоит копейки (кэш в 50x дешевле). */
@@ -813,9 +839,11 @@ export function apply(ctx, config = {}) {
         warnings.push({ code: 'cacheHitLow', pct: current.cacheHitPct, floor: cfg.cacheHitFloorPct })
       }
       if (current.freshDelta >= cfg.anomalyDelta || current.fresh >= cfg.base) {
-        warnings.push({ code: 'coldPrefill', fresh: current.fresh, usd: Number(((current.fresh * rates.fresh) / 1000000).toFixed(4)) })
+        warnings.push({ code: 'coldPrefill', fresh: current.fresh, usd: priced ? Number(((current.fresh * rates.fresh) / 1000000).toFixed(4)) : null })
       }
-      if (current.costUsd >= cfg.anomalyCostUsd) warnings.push({ code: 'expensiveStep', usd: current.costUsd })
+      if (priced && current.costUsd !== null && current.costUsd >= cfg.anomalyCostUsd) {
+        warnings.push({ code: 'expensiveStep', usd: current.costUsd })
+      }
       if (cap.compactThreshold > 0 && current.prompt >= cap.compactThreshold * 0.9) {
         warnings.push({ code: 'nearCompaction', prompt: current.prompt, threshold: cap.compactThreshold })
       }

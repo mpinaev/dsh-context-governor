@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.2
+
+- Do not invent prices for providers the plugin has no rates for. DSH does not
+  expose token cost anywhere (not in the model info, not in the token meter,
+  not in any service) — the only rates are the plugin's own, and they are
+  DeepSeek's. From a non-DeepSeek provider (cline, OpenRouter, pi-ai, …) the
+  chip and panel now read "price unavailable" instead of a fake `$`, and the
+  `cost`/`relative`/`rates` fields are `null`; `expensiveStep`/`coldPrefill`
+  stop reporting a dollar amount there. The peak/off-peak (⚡/🌙) marker is
+  still shown: it is a clock reading, not a price. `pricedProviders` config
+  (default `['deepseek-official']`) controls who is known.
+- New i18n keys `noPrice` and `balanceUnknown`.
+
 ## 0.2.1
 
 - Cache-hit is now computed from the session totals and formatted like the
