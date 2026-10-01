@@ -79,7 +79,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
           (season.holidayKnown === false ? ' Holiday calendar not loaded — weekdays only.' : '')
       },
       balanceTitle: function (b) {
-        return 'DeepSeek balance: ' + b.total + ' ' + b.currency + ' (granted ' + b.granted + ', topped up ' + b.toppedUp + ')' +
+        return 'DeepSeek balance: ' + money2(b.total) + ' ' + b.currency + ' (granted ' + money2(b.granted) + ', topped up ' + money2(b.toppedUp) + ')' +
           (b.isAvailable === false ? ' — account unavailable' : '') +
           (b.source === 'account' ? ' · platform account' : ' · API key')
       },
@@ -137,7 +137,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
           (season.holidayKnown === false ? '节假日日历未加载 — 仅按工作日判断。' : '')
       },
       balanceTitle: function (b) {
-        return 'DeepSeek 余额：' + b.total + ' ' + b.currency + '（赠送 ' + b.granted + '，充值 ' + b.toppedUp + '）' +
+        return 'DeepSeek 余额：' + money2(b.total) + ' ' + b.currency + '（赠送 ' + money2(b.granted) + '，充值 ' + money2(b.toppedUp) + '）' +
           (b.isAvailable === false ? ' — 账户不可用' : '') +
           (b.source === 'account' ? ' · 平台账户' : ' · API 密钥')
       },
@@ -196,7 +196,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
           (season.holidayKnown === false ? ' Календарь праздников не загружен — считаем только по будням.' : '')
       },
       balanceTitle: function (b) {
-        return 'Баланс DeepSeek: ' + b.total + ' ' + b.currency + ' (подарок ' + b.granted + ', пополнено ' + b.toppedUp + ')' +
+        return 'Баланс DeepSeek: ' + money2(b.total) + ' ' + b.currency + ' (подарок ' + money2(b.granted) + ', пополнено ' + money2(b.toppedUp) + ')' +
           (b.isAvailable === false ? ' — счёт недоступен' : '') +
           (b.source === 'account' ? ' · аккаунт платформы' : ' · API-ключ')
       },
@@ -287,13 +287,20 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     return n.toFixed(4)
   }
 
+  /** Деньги печатаем до цента: баланс — это сумма на счёте, третий знак в ней
+      был бы приписанным нулём (хост и API отдают два знака). */
+  function money2(value) {
+    var number = Number(value)
+    return Number.isFinite(number) ? number.toFixed(2) : '—'
+  }
+
   /** Баланс: валюту называет API, знак подставляем по коду. */
   function fmtMoney(bal) {
     if (!bal || !bal.ok) return ''
     var sign = bal.currency === 'CNY' ? '¥' : bal.currency === 'USD' ? '$' : (bal.currency ? bal.currency + ' ' : '')
     var value = Number(bal.total)
     if (!Number.isFinite(value)) return sign + '—'
-    return sign + (value >= 100 ? value.toFixed(2) : value.toFixed(3))
+    return sign + value.toFixed(2)
   }
 
   function weekdayName(season, M, lang) {

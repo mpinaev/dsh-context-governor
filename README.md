@@ -223,6 +223,13 @@ top-up, currency, availability). Concurrent reads collapse, and failures degrade
 into a state (no-credential, error, disabled) rather than an exception. The
 refresh button clears the cache and re-reads the balance and the tariff.
 
+**The currency is not converted.** The step cost and the configured rates
+(`freshRate`, `cacheReadRate`, `cacheWriteRate`, `outputRate` — all $/1M) are in
+US dollars, while the balance is printed in whatever currency the source reports
+(USD or CNY for DeepSeek), to the cent. The plugin never converts between them, so
+a `¥` balance and a `$` step cost in the same chip are different units — compare
+them only after converting yourself.
+
 **Route access.** `/context-governor/api/*` are closed by a guard header and an
 Origin check: a request must carry `x-dsh-context-governor: 1` (only the plugin
 client sets it) and must not be cross-origin. Without the header — 403, with a

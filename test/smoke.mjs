@@ -292,7 +292,7 @@ async function main() {
 
   console.log('client bundle')
   ok('module loader format', clientSource.includes('__ModuleLoader__'))
-  for (const marker of ['uiIdentity', 'cacheRead', 'cacheWrite', 'other-provider', 'windowSources', 'cacheHitText', 'noPrice', 'balanceUnknown']) {
+  for (const marker of ['uiIdentity', 'cacheRead', 'cacheWrite', 'other-provider', 'windowSources', 'cacheHitText', 'noPrice', 'balanceUnknown', 'money2']) {
     ok('client has ' + marker, clientSource.includes(marker))
   }
   ok('client has no stale fallback bands', !clientSource.includes('temporary bands') && !clientSource.includes('полосы временные'))

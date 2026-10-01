@@ -19,6 +19,14 @@
   already ships a Chinese interface. The language switcher in both existing
   READMEs links to it, and the stale assertion count in the dev section was
   corrected to match the smoke test.
+- The balance is printed to the cent. `fmtMoney` used three decimals below 100
+  (a leftover from the step-cost formatter `fmtUsd`, where a step can cost a
+  fraction of a cent), so a `¥8.95` balance read `¥8.950` while the tooltip
+  printed the raw `8.95`. Money is now two decimals everywhere — chip, panel and
+  tooltip, in every currency.
+- The READMEs state plainly that the step cost and the rates are in US dollars
+  while the balance is shown in the source currency (USD or CNY) without
+  conversion, so the two must not be compared directly.
 
 ## 0.2.3
 

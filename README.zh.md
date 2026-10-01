@@ -186,6 +186,11 @@ outputRate）是低谷价；高峰时乘以 peakMultiplier（默认 2），因�
 读取会合并，失败会退化为一种状态（no-credential、error、disabled）而不是抛异常。
 刷新按钮会清空缓存并重新读取余额和费率。
 
+**货币不做换算。** 单步费用和配置的费率（`freshRate`、`cacheReadRate`、
+`cacheWriteRate`、`outputRate`，均为 $/1M）以美元计，而余额按来源返回的货币显示
+（DeepSeek 为 USD 或 CNY），保留到分。插件不在两者之间换算，所以同一个胶囊里的
+`¥` 余额与 `$` 单步费用是不同单位——要比较请先自行换算。
+
 **路由访问。** `/context-governor/api/*` 由服务头和 Origin 校验保护：请求必须携带
 `x-dsh-context-governor: 1`（只有本插件客户端会设置）且不得跨源。没有该头——403，
 带外部 `Origin`——403。不带 `Origin` 的本机回环 GET 是允许的，方便用 `curl` 排查。
