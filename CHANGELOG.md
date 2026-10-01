@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - The peak/off-peak tariff now honours Chinese public holidays. DeepSeek's rule
   is peak on weekdays **excluding Chinese public holidays**, and off-peak all day
