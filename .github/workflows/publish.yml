@@ -44,5 +44,18 @@ jobs:
           fi
       - name: Smoke test
         run: npm test
+      # Diagnose the OIDC hand-off without printing any token: trusted publishing
+      # needs GitHub to expose the id-token request endpoint to this step.
+      - name: OIDC diagnostics
+        run: |
+          echo "request url: ${ACTIONS_ID_TOKEN_REQUEST_URL:+present}"
+          echo "request token: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+present}"
+          echo "npm: $(npm --version) on node $(node --version)"
+          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org")
+            echo "oidc token request: HTTP $code"
+          fi
       - name: Publish to npm
         run: npm publish
