@@ -60,5 +60,7 @@ This relies on a trusted publisher configured once on npmjs.com for the package:
 GitHub Actions, repository `mpinaev/dsh-context-governor`, workflow file
 `publish.yml`, permission "Allow npm publish".
 
-Publishing by hand from a laptop still works, but only with a token that has 2FA
-bypass enabled — and npm retires that path for direct publishing in January 2027.
+The package is set to **require two-factor authentication and disallow tokens** on
+npmjs.com, so the tagged OIDC workflow is the only way to publish it: a hand
+`npm publish` from a laptop is refused even with a fresh token. Releases are
+therefore tag-only by construction, not just by convention.
