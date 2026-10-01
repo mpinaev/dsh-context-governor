@@ -44,29 +44,9 @@ jobs:
           fi
       - name: Smoke test
         run: npm test
-      # Diagnose the OIDC hand-off without printing any token: trusted publishing
-      # needs GitHub to expose the id-token request endpoint to this step.
-      - name: OIDC diagnostics
-        run: |
-          echo "request url: ${ACTIONS_ID_TOKEN_REQUEST_URL:+present}"
-          echo "request token: ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+present}"
-          echo "npm: $(npm --version) on node $(node --version)"
-          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
-            code=$(curl -s -o /dev/null -w '%{http_code}' \
-              -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org")
-            echo "oidc token request: HTTP $code"
-          fi
-      # Trusted publishing should authenticate over OIDC on its own. It does not
-      # here — npm reports ENEEDAUTH although the OIDC endpoint answers 200 — so
-      # fall back to an explicit --provenance publish: that path also carries the
-      # OIDC hand-off, and its error (if any) tells us whether npm reaches the
-      # registry at all under the trusted identity.
+      # Authenticates as the trusted publisher through OIDC; no token, no
+      # --provenance (npm attaches the attestation itself). If the package has no
+      # trusted publisher on npmjs.com, npm reports ENEEDAUTH here — that is the
+      # npm-side gap, not a repository problem.
       - name: Publish to npm
-        run: |
-          if npm publish; then
-            echo "published through trusted publishing without extra flags"
-          else
-            echo "::warning::plain publish did not use OIDC; retrying with --provenance"
-            npm publish --provenance
-          fi
+        run: npm publish
