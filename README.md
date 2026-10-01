@@ -101,7 +101,7 @@ Rules and the release flow live in [CONTRIBUTING.md](CONTRIBUTING.md).
 ## What it shows
 
 - prompt size (uncached input + cache tokens) and an **estimated step cost in USD**
-  (DeepSeek only; for other providers the cost is shown as *price unavailable*);
+  (DeepSeek only; for other providers no price is shown at all);
 - a cost multiplier relative to `base` (fresh input = 1.0, cache read =
   `cacheReadRate/freshRate`, about 0.02 for deepseek-flash);
 - cache-hit over the session totals, % (a partial hit is never rounded up to 100);
@@ -155,13 +155,15 @@ a hit.
 the plugin keeps its own rates table (off by default for providers it does not
 know). The chip/balance logic is therefore:
 
-- the step cost and `relative` multiplier are shown **only where the plugin has
-  rates for the provider** — today that is DeepSeek (`deepseek-official`, ids
-  starting with `deepseek`). For any other provider (cline, clinebot, OpenRouter,
-  pi-ai, …) the cost is unknown, and the chip/panel write "price unavailable"
-  instead of inventing a number;
+- the price is shown **only where the plugin has rates for the provider** — today
+  that is DeepSeek (`deepseek-official`, ids starting with `deepseek`). For any
+  other provider (cline, clinebot, OpenRouter, pi-ai, …) nothing price-related is
+  computed or displayed: the chip drops the cost segment, and the panel drops the
+  step-cost, relative-to-base and rates rows — no invented dollar figure and no
+  "price unavailable" placeholder either;
 - the peak/off-peak time marker (⚡/🌙) is shown always, because it is just a clock
-  reading, not a per-provider cost.
+  reading, not a per-provider cost; its `×N` multiplier appears only where the
+  rates are known.
 
 
 ## Signals

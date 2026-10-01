@@ -75,6 +75,70 @@ function missingKeys(from, to, prefix) {
   return out
 }
 
+/** Собрать весь видимый текст из дерева элементов createElement. */
+function flattenText(node, out) {
+  if (node === null || node === undefined || typeof node === 'boolean') return out
+  if (typeof node === 'string' || typeof node === 'number') { out.push(String(node)); return out }
+  if (Array.isArray(node)) {
+    for (const item of node) flattenText(item, out)
+    return out
+  }
+  if (typeof node === 'object') {
+    if (node.props && typeof node.props.title === 'string') out.push(node.props.title)
+    for (const child of node.children || []) flattenText(child, out)
+  }
+  return out
+}
+
+/** Поднять клиентский бандл с заглушкой React и отрисовать чип с панелью:
+    проверяется то, что реально попадает в интерфейс, а не исходник. */
+function clientRender(source, payload, lang) {
+  let factory
+  let queue = []
+  const react = {
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat() }),
+    useState: (initial) => [queue.length > 0 ? queue.shift() : (typeof initial === 'function' ? initial() : initial), () => {}],
+    useEffect: () => {},
+    useCallback: (fn) => fn,
+  }
+  const previous = globalThis.window
+  globalThis.window = {
+    __ModuleLoader__: { load: ({ factory: captured }) => { factory = captured } },
+    localStorage: { getItem: () => null, setItem() {} },
+  }
+  try {
+    new Function(source)() // eslint-disable-line no-new-func
+    const mod = factory((name) => {
+      if (name === 'react') return react
+      throw new Error('client render: unexpected require ' + name)
+    })
+    const registered = []
+    mod.apply({ slots: { inject: (name, callback) => callback(), register: (spec, component) => { registered.push(component); return () => {} } } })
+    queue = [lang, payload, true]
+    return flattenText(registered[0]({ sessionId: 'sess' }), []).join(' | ')
+  } finally {
+    if (previous === undefined) delete globalThis.window
+    else globalThis.window = previous
+  }
+}
+
+/** Ответ /api/status: значения по умолчанию — не-DeepSeek провайдер без ставок. */
+function statusPayload(overrides = {}) {
+  const payload = {
+    ok: true,
+    config: { base: 100000, compactThreshold: 126272, windowTokens: 200000, reservedTokens: 8192, route: 'cline/x', windowSource: 'catalog', provider: 'cline', priced: false },
+    current: { session: 's', prompt: 1050, fresh: 100, cacheRead: 900, cacheWrite: 50, output: 20, freshDelta: 100, cacheHitPct: 86, cacheHitText: '86', relative: null, costUsd: null, band: 0, ts: 1 },
+    children: [],
+    childrenPromptSum: 0,
+    season: { peak: true, holiday: false, countdown: '2h', multiplier: 2, beijing: { weekdayIndex: 4, clock: '10:00' }, color: '#EF4444', holidayKnown: true },
+    rates: null,
+    warnings: [],
+    balance: { ok: false, state: 'other-provider', provider: 'cline' },
+  }
+  for (const key of Object.keys(overrides)) payload[key] = overrides[key]
+  return payload
+}
+
 /** Minimal Cordis-like context. Options switch off optional services so both
     data paths (projections and the llm/stream fallback) can be exercised. */
 function makeHarness(options = {}) {
@@ -195,6 +259,7 @@ async function main() {
   eq('cline relative is unknown', c.current.relative, null)
   ok('peak/off-peak shown even for cline', c.season !== null)
   eq('cline rates hidden', c.rates, null)
+  eq('cline has no known rates', c.config.priced, false)
   eq('balance hidden off DeepSeek', c.balance.state, 'other-provider')
   eq('balance names the provider', c.balance.provider, 'cline')
   ok('response carries no dead fields',
@@ -203,6 +268,7 @@ async function main() {
   const d = await statusOf(h, 'sess-deepseek')
   eq('deepseek threshold', d.config.compactThreshold, 678464)
   ok('deepseek balance is attempted', d.balance.state === 'no-credential', JSON.stringify(d.balance))
+  eq('deepseek rates are known to the client', d.config.priced, true)
   /* Календаря нет (сеть выключена) — клиент должен знать, что тариф приблизительный. */
   eq('missing holiday calendar is reported', d.season.holidayKnown, false)
 
@@ -331,7 +397,7 @@ async function main() {
 
   console.log('client bundle')
   ok('module loader format', clientSource.includes('__ModuleLoader__'))
-  for (const marker of ['uiIdentity', 'cacheRead', 'cacheWrite', 'other-provider', 'windowSources', 'cacheHitText', 'noPrice', 'balanceUnknown', 'money2']) {
+  for (const marker of ['uiIdentity', 'cacheRead', 'cacheWrite', 'other-provider', 'windowSources', 'cacheHitText', 'noPrice', 'balanceUnknown', 'money2', 'cfgInfo.priced !== false']) {
     ok('client has ' + marker, clientSource.includes(marker))
   }
   ok('client has no stale fallback bands', !clientSource.includes('temporary bands') && !clientSource.includes('полосы временные'))
@@ -342,6 +408,32 @@ async function main() {
     const diff = missingKeys(messages.en, messages[lang], '')
       .concat(missingKeys(messages[lang], messages.en, ''))
     ok('i18n ' + lang + ' has the same keys as en', diff.length === 0, 'differs: ' + diff.join(', '))
+  }
+
+  /* Цена — только там, где плагин знает ставки: на не-DeepSeek провайдере её нет
+     ни в чипе, ни в панели, ни в подсказке, и множитель тарифа тоже не показываем. */
+  console.log('client render: price only where the rates are known')
+  const clinePayload = statusPayload()
+  const deepseekPayload = statusPayload({
+    config: { base: 100000, compactThreshold: 678464, windowTokens: 1000000, reservedTokens: 256000, route: 'deepseek-official/deepseek-flash', windowSource: 'catalog', provider: 'deepseek-official', priced: true },
+    current: { session: 's', prompt: 1050, fresh: 100, cacheRead: 900, cacheWrite: 50, output: 20, freshDelta: 100, cacheHitPct: 86, cacheHitText: '86', relative: 0.015, costUsd: 0.0013, band: 0, ts: 1 },
+    rates: { fresh: 0.3, cacheRead: 0.006, cacheWrite: 0.3, output: 1.2 },
+    balance: { ok: true, state: 'ok', source: 'api-key', currency: 'USD', total: 8.95, granted: 0, toppedUp: 8.95, isAvailable: true },
+  })
+  for (const lang of ['en', 'ru', 'zh']) {
+    const M = messages[lang]
+    const withoutRates = clientRender(clientSource, clinePayload, lang)
+    ok('no price on a provider without rates (' + lang + ')',
+      !withoutRates.includes(M.noPrice) && !withoutRates.includes(M.rows.cost) &&
+        !withoutRates.includes(M.rows.relative) && !withoutRates.includes(M.rows.rates),
+      withoutRates)
+    ok('no tariff multiplier without rates (' + lang + ')', !withoutRates.includes('×2'), withoutRates)
+    ok('no undefined text off DeepSeek (' + lang + ')', !withoutRates.includes('undefined'), withoutRates)
+    const withRates = clientRender(clientSource, deepseekPayload, lang)
+    ok('the price is shown where rates are known (' + lang + ')',
+      withRates.includes('$0.0013') && withRates.includes(M.rows.cost) &&
+        withRates.includes(M.rows.rates) && withRates.includes('×2'),
+      withRates)
   }
 
   console.log('')

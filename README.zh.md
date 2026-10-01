@@ -91,7 +91,7 @@ dsh plugin --profile web add "link:$PWD"
 ## 它会显示什么
 
 - prompt 大小（未命中输入 + 缓存 token）以及 **单步费用的美元估算**
-  （仅 DeepSeek；其他提供方显示为*价格未知*）；
+  （仅 DeepSeek；其他提供方完全不显示价格）；
 - 相对 `base` 的费用倍数（新输入 = 1.0，缓存读取 =
   `cacheReadRate/freshRate`，对 deepseek-flash 约为 0.02）；
 - 按会话总量计算的缓存命中率，%（部分命中永远不会被四舍五入成 100）；
@@ -136,10 +136,13 @@ threshold = min(thresholdRatio * window, window - reserve - headroom)
 **钱。** DSH 和提供方都不在任何地方以美元报告 token 费用，因此插件自带费率表
 （对它不认识的提供方默认关闭）。所以胶囊/余额的逻辑是：
 
-- 单步费用和 `relative` 倍数**只在插件有该提供方费率时**显示——目前就是 DeepSeek
+- 价格**只在插件有该提供方费率时**显示——目前就是 DeepSeek
   （`deepseek-official`，以及以 `deepseek` 开头的 id）。对任何其他提供方（cline、
-  clinebot、OpenRouter、pi-ai……）费用未知，胶囊/面板写“价格未知”，而不编造数字；
-- 高峰/低谷标记（⚡/🌙）始终显示，因为它只是读出时钟，不是某个提供方的费用。
+  clinebot、OpenRouter、pi-ai……）与价格相关的都不计算、不显示：胶囊里去掉费用那
+  一段，面板里去掉“单步费用”“相对基准”和“费率”三行——既没有编造的数字，也没有
+  “价格未知”的占位；
+- 高峰/低谷标记（⚡/🌙）始终显示，因为它只是读出时钟，不是某个提供方的费用；只有
+  在已知费率时它才带上 `×N` 倍数。
 
 ## 信号
 

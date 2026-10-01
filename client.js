@@ -312,12 +312,13 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     return (WEEKDAYS[lang] || WEEKDAYS.en)[index] || ''
   }
 
-  function seasonLabelText(season, M) {
+  function seasonLabelText(season, M, withMultiplier) {
     if (!season) return M.dash
     /* Праздник Китая — будний день, но off-peak по правилу DeepSeek: помечаем
        причину, иначе «off-peak в будни» выглядит как ошибка. */
     if (season.holiday) return M.season.off + ' (' + M.season.holiday + ')'
-    return (season.peak ? M.season.peak : M.season.off) + (season.peak ? ' (×' + season.multiplier + ')' : '')
+    /* Множитель — про цену, поэтому без известных ставок его не показываем. */
+    return (season.peak ? M.season.peak : M.season.off) + (season.peak && withMultiplier ? ' (×' + season.multiplier + ')' : '')
   }
 
   function seasonTitleText(season, M, lang) {
@@ -443,14 +444,19 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
        (цвет приходит от host вместе с сезоном). */
     var peak = !!(season && season.peak)
     var peakColor = peak ? season.color : null
-    /* Цена — только если host удалось посчитать (DeepSeek). Иначе «цена неизвестна». */
-    var knownPrice = cur && cur.costUsd != null
+    /* Ставки плагин знает только для DeepSeek. У остальных провайдеров цену
+       шага не считаем и не показываем вовсе — ни в чипе, ни в панели, ни в
+       подсказке: выдуманное «цена неизвестна» там только мешает.
+       `priced` приходит от host; старый host без поля — прежнее поведение. */
+    var showPrice = cfgInfo.priced !== false
+    var knownPrice = showPrice && cur && cur.costUsd != null
     var costText = knownPrice ? ('$' + fmtUsd(cur.costUsd)) : M.noPrice
     var seasonText = season ? (season.peak ? '⚡' + season.countdown : '🌙' + season.countdown) : ''
     var balText = fmtMoney(bal)
-    var label = cur
-      ? M.ctx + ' ' + fmtTok(cur.prompt) + ' · ' + costText + ' · ' + cacheHitLabel(cur, M) + kidsNote
-      : M.ctx + ' ' + M.dash
+    var labelParts = cur ? [M.ctx + ' ' + fmtTok(cur.prompt)] : []
+    if (cur && showPrice) labelParts.push(costText)
+    if (cur) labelParts.push(cacheHitLabel(cur, M))
+    var label = cur ? labelParts.join(' · ') + kidsNote : M.ctx + ' ' + M.dash
     var tipParts = cur
       ? [
           M.tipContext + ' ' + cur.prompt + ' (' + M.band[band] + ')',
@@ -458,9 +464,9 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
           M.rows.cacheRead + ' ' + cur.cacheRead,
           M.rows.cacheWrite + ' ' + cur.cacheWrite,
           M.rows.cacheHit + ' ' + cacheHitLabel(cur, M),
-          knownPrice ? ('~$' + fmtUsd(cur.costUsd) + ' ' + M.perStep + ' (x' + cur.relative + ' ' + M.rows.relative + ' ' + (cfgInfo.base || '') + ')') : (M.noPrice + ' ' + M.perStep),
         ]
       : []
+    if (cur && showPrice) tipParts.push(knownPrice ? ('~$' + fmtUsd(cur.costUsd) + ' ' + M.perStep + ' (x' + cur.relative + ' ' + M.rows.relative + ' ' + (cfgInfo.base || '') + ')') : (M.noPrice + ' ' + M.perStep))
     if (cur && cfgInfo.windowTokens) tipParts.push(M.rows.window + ' ' + cfgInfo.windowTokens + ' (' + (cfgInfo.route || '') + ')')
     if (season) tipParts.push(seasonTitleText(season, M, lang))
     if (bal) tipParts.push(balanceTipText(bal, M))
@@ -491,19 +497,21 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
             [M.rows.cacheHit, cacheHitLabel(cur, M)],
             [M.rows.output, cur.output],
             [M.rows.cold, '+' + cur.freshDelta],
-            [M.rows.cost, knownPrice ? ('~$' + fmtUsd(cur.costUsd)) : M.noPrice],
-            [M.rows.relative + ' ' + fmtTok(cfgInfo.base || 0), knownPrice ? ('x' + cur.relative) : M.noPrice],
+            /* Цену показываем только на провайдерах с известными ставками;
+               у остальных строк нет вовсе (ни значения, ни «цена неизвестна»). */
+            showPrice ? [M.rows.cost, knownPrice ? ('~$' + fmtUsd(cur.costUsd)) : M.noPrice] : null,
+            showPrice ? [M.rows.relative + ' ' + fmtTok(cfgInfo.base || 0), knownPrice ? ('x' + cur.relative) : M.noPrice] : null,
             [M.rows.window, cfgInfo.windowTokens ? fmtTok(cfgInfo.windowTokens) + ' (' + (cfgInfo.route || '?') + ')' : M.unknown],
             [M.rows.windowSource, windowSourceText(cfgInfo.windowSource, M)],
             [M.rows.threshold, cfgInfo.compactThreshold ? cfgInfo.compactThreshold : M.dash],
             [M.rows.reserve, cfgInfo.reservedTokens ? cfgInfo.reservedTokens : M.dash],
             [M.rows.band, M.band[band] + ' (' + band + ')'],
-            [M.rows.tariff, seasonLabelText(season, M), peakColor],
+            [M.rows.tariff, seasonLabelText(season, M, showPrice), peakColor],
             [M.rows.tariffFlip, season ? season.countdown + ' → ' + (season.peak ? M.season.off : M.season.peak) : M.dash, peakColor],
             [M.rows.beijing, season ? weekdayName(season, M, lang) + ' ' + season.beijing.clock : M.dash, peakColor],
-            [M.rows.rates, data.rates ? M.ratesFmt(data.rates) : M.noPrice],
+            showPrice ? [M.rows.rates, data.rates ? M.ratesFmt(data.rates) : M.noPrice] : null,
             [M.rows.balance, balanceStateText(bal, M), bal && bal.ok ? peakColor : null],
-          ]
+          ].filter(Boolean)
         : [[M.tipContext, M.noData]]
       /* Календарь праздников не доехал (нет сети / год ещё не опубликован):
          тариф считаем по будням — говорим об этом прямо, а не молчим. */

@@ -1025,6 +1025,9 @@ export function apply(ctx, config = {}) {
         route: cap.route,
         windowSource: cap.source,
         provider: activeProvider,
+        /* Знает ли плагин ставки этого провайдера. false — цену шага не считаем
+           и клиент не показывает её вовсе (ни в чипе, ни в панели). */
+        priced: priced,
       },
       current: current,
       children: children,

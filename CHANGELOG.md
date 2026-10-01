@@ -37,6 +37,13 @@
   `undefined` instead of text. A smoke test now compares each language's keys
   against English recursively, so a missing key fails the suite instead of
   leaking into the UI.
+- No price UI at all on providers the plugin has no rates for. Previously the
+  chip and the panel wrote "price unavailable" for cline and friends, which was
+  noise around numbers that do not exist. The status payload now carries
+  `config.priced`, and the client drops the whole price block when it is false:
+  the chip loses its cost segment, and the panel loses the step-cost,
+  relative-to-base and rates rows. The peak marker stays (it is a clock reading),
+  but its `×N` multiplier appears only where rates are known.
 
 ## 0.2.3
 
