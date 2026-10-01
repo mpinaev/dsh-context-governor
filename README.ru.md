@@ -173,6 +173,20 @@ outputRate) — это off-peak; в пик они умножаются на peak
 ведёт к ближайшей реальной смене: границы внутри выходных пропускаются, то есть
 после пятницы 18:00 отсчёт идёт до понедельника 09:00, а не до субботы.
 
+**Государственные праздники Китая.** В официальном правиле есть оговорка, которую
+легко пропустить: пик — это будни **кроме государственных праздников КНР**, а в
+праздники DeepSeek держит off-peak круглые сутки. Плагин берёт календарь на год из
+поддерживаемого источника (`holidayUrl`, по умолчанию данные пакета
+`chinese-days`), один раз кэширует его на диск (`holidayCacheDir`, по умолчанию
+`<DSH_HOME>/cache/context-governor`) и обновляет сам — код каждый год править не
+нужно. Сеть трогается только в фоне: если календарь не доехал, тариф считается по
+будням, а панель честно пишет «календарь праздников не загружен». Свои даты можно
+задать в конфиге `holidays` — массив `'YYYY-MM-DD'` или диапазонов
+`'YYYY-MM-DD..YYYY-MM-DD'`; они применяются сразу, приоритетнее источника и
+работают без сети. В праздник строка тарифа читается как «off-peak (праздник
+Китая)», а счётчик перепрыгивает каникулы целиком — до следующего рабочего пика.
+Сеть можно выключить целиком: `holidayFetch: false`.
+
 **Баланс.** Порядок источников:
 
 1. **Официальный аккаунт платформы** — сервис harness `ctx.deepseekAccount`
@@ -275,11 +289,12 @@ error, disabled), а не в исключение. Кнопка ⟳ сбрасы
 В `~/.dsh/profiles/web/cordis.patch.yml` в блоке `context-governor` настраиваются
 только `bandRatios`, `headroomTokens`, `thresholdRatio`, прайс
 (`freshRate`, `cacheReadRate`, `cacheWriteRate`, `outputRate`, `peakMultiplier`) и
-пороги сигналов (`anomalyDelta`, `anomalyCostUsd`, `cacheHitFloorPct`); баланс —
-`balanceEnabled`, `useAccountBalance`, `balanceProviders`, `balanceTtlMs`,
-`balanceTimeoutMs`. `windowTokens` и `reservedTokens` можно задать принудительно,
-но по умолчанию они `0` — «спросить у harness»; хардкод там означает потерю
-адаптивности.
+пороги сигналов (`anomalyDelta`, `anomalyCostUsd`, `cacheHitFloorPct`); календарь
+праздников — `holidays`, `holidayFetch`, `holidayUrl`, `holidayCacheDir`,
+`holidayRetryMs`, `holidayTimeoutMs`; баланс — `balanceEnabled`,
+`useAccountBalance`, `balanceProviders`, `balanceTtlMs`, `balanceTimeoutMs`.
+`windowTokens` и `reservedTokens` можно задать принудительно, но по умолчанию они
+`0` — «спросить у harness»; хардкод там означает потерю адаптивности.
 
 ## Важно
 

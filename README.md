@@ -182,6 +182,21 @@ step cost and the warnings follow the tariff of the moment. The countdown runs t
 the next real switch: boundaries inside a weekend are skipped, so after Friday
 18:00 it counts to Monday 09:00, not to Saturday.
 
+**Chinese public holidays.** The official rule has an easy-to-miss caveat: peak is
+weekdays **excluding Chinese public holidays**, and on those holidays DeepSeek
+stays off-peak around the clock. The plugin takes the year's calendar from a
+maintained source (`holidayUrl`, by default the data of the `chinese-days`
+package), caches it on disk once (`holidayCacheDir`, default
+`<DSH_HOME>/cache/context-governor`) and refreshes itself — no code to edit every
+year. The network is used in the background only: if the calendar has not arrived,
+the tariff falls back to the weekday rule and the panel honestly says the holiday
+calendar is not loaded. Your own dates can be set with the `holidays` config — an
+array of `'YYYY-MM-DD'` or `'YYYY-MM-DD..YYYY-MM-DD'` ranges; they apply
+immediately, take priority over the source and work without a network. On a
+holiday the tariff row reads "off-peak (Chinese holiday)" and the countdown skips
+the whole holiday to the next working peak. The network can be turned off
+entirely: `holidayFetch: false`.
+
 **Balance.** Sources in order:
 
 1. **The official platform account** — the harness service `ctx.deepseekAccount`
@@ -288,7 +303,9 @@ In the `context-governor` block of `~/.dsh/profiles/web/cordis.patch.yml` you
 can tune only `bandRatios`, `headroomTokens`, `thresholdRatio`, the rates
 (`freshRate`, `cacheReadRate`, `cacheWriteRate`, `outputRate`,
 `peakMultiplier`) and the signal thresholds (`anomalyDelta`,
-`anomalyCostUsd`, `cacheHitFloorPct`); for the balance — `balanceEnabled`,
+`anomalyCostUsd`, `cacheHitFloorPct`); for the holiday calendar — `holidays`,
+`holidayFetch`, `holidayUrl`, `holidayCacheDir`, `holidayRetryMs`,
+`holidayTimeoutMs`; for the balance — `balanceEnabled`,
 `useAccountBalance`, `balanceProviders`, `balanceTtlMs`,
 `balanceTimeoutMs`. `windowTokens` and `reservedTokens` can be forced, but
 they default to `0`, meaning ask the harness; hardcoding them loses the

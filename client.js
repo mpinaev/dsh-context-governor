@@ -61,17 +61,22 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         relative: 'relative to base', window: 'model window', windowSource: 'window source',
         threshold: 'compaction threshold', reserve: 'output reserve', band: 'band',
         tariff: 'tariff', tariffFlip: 'flips in', beijing: 'Beijing time',
-        rates: 'rates $/1M', balance: 'balance',
+        rates: 'rates $/1M', balance: 'balance', holiday: 'holiday calendar',
       },
       /* Значения строки «window source»: host отдаёт код, текст выбирает язык. */
       windowSources: { catalog: 'model catalog', request: 'route resolve' },
-      season: { peak: 'peak', off: 'off-peak' },
+      season: { peak: 'peak', off: 'off-peak', holiday: 'Chinese holiday' },
+      holidayUnknown: 'not loaded (weekdays only)',
       balanceState: { disabled: 'disabled', 'no-credential': 'no API key', error: 'error', empty: 'empty', 'other-provider': 'DeepSeek only' },
       ratesFmt: function (r) { return 'in ' + r.fresh + ', cache-read ' + r.cacheRead + ', cache-write ' + r.cacheWrite + ', out ' + r.output },
       seasonTitle: function (season, day, clock) {
-        return season.peak
-          ? 'Peak tariff for another ' + season.countdown + ' (then off-peak). Beijing: ' + day + ' ' + clock + '.'
-          : 'Off-peak tariff, half price, for another ' + season.countdown + '. Beijing: ' + day + ' ' + clock + '.'
+        var when = season.holiday
+          ? 'Chinese public holiday: off-peak all day, half price.'
+          : (season.peak
+            ? 'Peak tariff for another ' + season.countdown + ' (then off-peak).'
+            : 'Off-peak tariff, half price, for another ' + season.countdown + '.')
+        return when + ' Beijing: ' + day + ' ' + clock + '.' +
+          (season.holidayKnown === false ? ' Holiday calendar not loaded — weekdays only.' : '')
       },
       balanceTitle: function (b) {
         return 'DeepSeek balance: ' + b.total + ' ' + b.currency + ' (granted ' + b.granted + ', topped up ' + b.toppedUp + ')' +
@@ -115,16 +120,21 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         relative: '相对基准', window: '模型窗口', windowSource: '窗口来源',
         threshold: '压缩阈值', reserve: '输出预留', band: '档位',
         tariff: '费率', tariffFlip: '距切换', beijing: '北京时间',
-        rates: '费率 $/1M', balance: '余额',
+        rates: '费率 $/1M', balance: '余额', holiday: '节假日日历',
       },
       windowSources: { catalog: '模型目录', request: '路由解析' },
-      season: { peak: '高峰', off: '低谷' },
+      season: { peak: '高峰', off: '低谷', holiday: '中国法定节假日' },
+      holidayUnknown: '未加载（仅按工作日）',
       balanceState: { disabled: '已关闭', 'no-credential': '未配置 API 密钥', error: '错误', empty: '空响应', 'other-provider': '仅限 DeepSeek' },
       ratesFmt: function (r) { return '输入 ' + r.fresh + '，缓存读 ' + r.cacheRead + '，缓存写 ' + r.cacheWrite + '，输出 ' + r.output },
       seasonTitle: function (season, day, clock) {
-        return season.peak
-          ? '高峰费率还有 ' + season.countdown + '（之后转低谷）。北京 ' + day + ' ' + clock + '。'
-          : '低谷费率（半价）还有 ' + season.countdown + '。北京 ' + day + ' ' + clock + '。'
+        var when = season.holiday
+          ? '中国法定节假日：全天低谷价（半价）。'
+          : (season.peak
+            ? '高峰费率还有 ' + season.countdown + '（之后转低谷）。'
+            : '低谷费率（半价）还有 ' + season.countdown + '。')
+        return when + '北京 ' + day + ' ' + clock + '。' +
+          (season.holidayKnown === false ? '节假日日历未加载 — 仅按工作日判断。' : '')
       },
       balanceTitle: function (b) {
         return 'DeepSeek 余额：' + b.total + ' ' + b.currency + '（赠送 ' + b.granted + '，充值 ' + b.toppedUp + '）' +
@@ -169,16 +179,21 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         relative: 'относительно базы', window: 'окно модели', windowSource: 'источник окна',
         threshold: 'порог компакции', reserve: 'резерв вывода', band: 'полоса',
         tariff: 'тариф', tariffFlip: 'до смены тарифа', beijing: 'время Пекина',
-        rates: 'ставки $/1M', balance: 'баланс',
+        rates: 'ставки $/1M', balance: 'баланс', holiday: 'календарь праздников',
       },
       windowSources: { catalog: 'каталог моделей', request: 'резолв маршрута' },
-      season: { peak: 'пик', off: 'off-peak' },
+      season: { peak: 'пик', off: 'off-peak', holiday: 'праздник Китая' },
+      holidayUnknown: 'не загружен (только будни)',
       balanceState: { disabled: 'выключен', 'no-credential': 'нет API-ключа', error: 'ошибка', empty: 'пустой ответ', 'other-provider': 'только для DeepSeek' },
       ratesFmt: function (r) { return 'вход ' + r.fresh + ', чтение ' + r.cacheRead + ', запись ' + r.cacheWrite + ', output ' + r.output },
       seasonTitle: function (season, day, clock) {
-        return season.peak
-          ? 'Тариф пик ещё ' + season.countdown + ' (дальше off-peak). Пекин: ' + day + ' ' + clock + '.'
-          : 'Тариф off-peak, вдвое дешевле, ещё ' + season.countdown + '. Пекин: ' + day + ' ' + clock + '.'
+        var when = season.holiday
+          ? 'Государственный праздник Китая: весь день off-peak, вдвое дешевле.'
+          : (season.peak
+            ? 'Тариф пик ещё ' + season.countdown + ' (дальше off-peak).'
+            : 'Тариф off-peak, вдвое дешевле, ещё ' + season.countdown + '.')
+        return when + ' Пекин: ' + day + ' ' + clock + '.' +
+          (season.holidayKnown === false ? ' Календарь праздников не загружен — считаем только по будням.' : '')
       },
       balanceTitle: function (b) {
         return 'Баланс DeepSeek: ' + b.total + ' ' + b.currency + ' (подарок ' + b.granted + ', пополнено ' + b.toppedUp + ')' +
@@ -290,6 +305,9 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
 
   function seasonLabelText(season, M) {
     if (!season) return M.dash
+    /* Праздник Китая — будний день, но off-peak по правилу DeepSeek: помечаем
+       причину, иначе «off-peak в будни» выглядит как ошибка. */
+    if (season.holiday) return M.season.off + ' (' + M.season.holiday + ')'
     return (season.peak ? M.season.peak : M.season.off) + (season.peak ? ' (×' + season.multiplier + ')' : '')
   }
 
@@ -474,6 +492,9 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
             [M.rows.balance, balanceStateText(bal, M)],
           ]
         : [[M.tipContext, M.noData]]
+      /* Календарь праздников не доехал (нет сети / год ещё не опубликован):
+         тариф считаем по будням — говорим об этом прямо, а не молчим. */
+      if (season && season.holidayKnown === false) rows.push([M.rows.holiday, M.holidayUnknown])
       var kidsRows = kids.slice(0, 5).map(function (kid) {
         return h('div', { key: kid.session, style: { display: 'flex', justifyContent: 'space-between', gap: '12px' } },
           h('span', { style: { color: BAND_COLOR[0] } }, kid.session.slice(-8)),

@@ -17,6 +17,9 @@
  */
 
 import { execFileSync } from 'node:child_process'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 export const name = 'dsh-context-governor'
 
@@ -71,6 +74,18 @@ const DEFAULTS = {
   /* Тариф DeepSeek: пик — будни 09:00–12:00 и 14:00–18:00 по Пекину (UTC+8),
      вне пика цена вдвое ниже. Ставки выше заданы off-peak; пик = ×peakMultiplier. */
   peakMultiplier: 2,
+  /* Праздники Китая: в государственные праздники КНР DeepSeek держит off-peak
+     круглые сутки, даже в будни. Календарь на год берём из поддерживаемого
+     источника (пакет chinese-days), кэшируем на диск и обновляем сами — код
+     каждый год править не нужно. Свои даты можно дописать в `holidays`
+     ('YYYY-MM-DD' или диапазон 'YYYY-MM-DD..YYYY-MM-DD'): они приоритетнее
+     источника и работают даже без сети. */
+  holidayFetch: true,
+  holidayUrl: 'https://cdn.jsdelivr.net/npm/chinese-days/dist/years/{year}.json',
+  holidayCacheDir: '',
+  holidayRetryMs: 6 * 60 * 60 * 1000,
+  holidayTimeoutMs: 15000,
+  holidays: [],
   /* Баланс DeepSeek: сначала официальный сервис аккаунта harness, иначе
      GET /user/balance; ключ не покидает хост. */
   balanceEnabled: true,
@@ -92,12 +107,27 @@ const PEAK_WINDOWS = [[9 * 60, 12 * 60], [14 * 60, 18 * 60]]
 const PEAK_BOUNDARIES = [0, 9 * 60, 12 * 60, 14 * 60, 18 * 60]
 const DAY_MS = 24 * 60 * 60 * 1000
 
-function isPeak(at) {
+/** Пик/off-peak на момент; holidays — Set дат 'YYYY-MM-DD' (праздники Китая).
+    Экспортируется для тестов: логика тарифа должна проверяться без запуска
+    всего плагина и без сети. */
+export function isPeak(at, holidays) {
   const beijing = new Date(at.getTime() + BEIJING_OFFSET_MS)
   const day = beijing.getUTCDay()
   if (day === 0 || day === 6) return false
+  /* Государственный праздник Китая — off-peak круглые сутки, даже в будни.
+     Holidays — Set дат 'YYYY-MM-DD' по Пекину; пустой = календарь неизвестен,
+     работает правило по дням недели. */
+  if (holidays && holidays.has(beijingDateKey(at))) return false
   const minutes = beijing.getUTCHours() * 60 + beijing.getUTCMinutes()
   return PEAK_WINDOWS.some(function (range) { return minutes >= range[0] && minutes < range[1] })
+}
+
+/** Ключ календарного дня по Пекину: 'YYYY-MM-DD'. Так адресуются праздники. */
+function beijingDateKey(at) {
+  const beijing = new Date(at.getTime() + BEIJING_OFFSET_MS)
+  const month = String(beijing.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(beijing.getUTCDate()).padStart(2, '0')
+  return beijing.getUTCFullYear() + '-' + month + '-' + day
 }
 
 function beijingMidnight(timeMs) {
@@ -105,19 +135,20 @@ function beijingMidnight(timeMs) {
   return Date.UTC(beijing.getUTCFullYear(), beijing.getUTCMonth(), beijing.getUTCDate()) - BEIJING_OFFSET_MS
 }
 
-/** Ближайшая РЕАЛЬНАЯ смена тарифа: границы внутри выходных не считаются. */
-function nextFlip(at) {
+/** Ближайшая РЕАЛЬНАЯ смена тарифа: границы внутри выходных и праздников не
+    считаются — поэтому каникулы счётчик перепрыгивает целиком. */
+export function nextFlip(at, holidays) {
   const from = at.getTime()
   const midnight = beijingMidnight(from)
   const candidates = []
-  for (let day = 0; day <= 10; day++) {
+  for (let day = 0; day <= 40; day++) {
     const base = midnight + day * DAY_MS
     for (const minutes of PEAK_BOUNDARIES) candidates.push(base + minutes * 60 * 1000)
   }
   candidates.sort(function (a, b) { return a - b })
   for (const candidate of candidates) {
     if (candidate <= from) continue
-    if (isPeak(new Date(candidate)) !== isPeak(new Date(candidate - 1))) return candidate
+    if (isPeak(new Date(candidate), holidays) !== isPeak(new Date(candidate - 1), holidays)) return candidate
   }
   return null
 }
@@ -141,9 +172,10 @@ function beijingClock(at) {
 }
 
 /** Состояние тарифа на момент времени: пик/off-peak и обратный отсчёт. */
-function seasonAt(at, peakMultiplier) {
-  const peak = isPeak(at)
-  const flip = nextFlip(at)
+function seasonAt(at, peakMultiplier, holidays) {
+  const holiday = !!holidays && holidays.has(beijingDateKey(at))
+  const peak = isPeak(at, holidays)
+  const flip = nextFlip(at, holidays)
   const remaining = flip === null ? null : flip - at.getTime()
   const countdown = remaining === null ? '' : formatCountdown(remaining)
   const beijing = beijingClock(at)
@@ -151,6 +183,7 @@ function seasonAt(at, peakMultiplier) {
   /* Подписи не формируем: их собирает клиент на выбранном языке. */
   return {
     peak: peak,
+    holiday: holiday,
     countdown: countdown,
     multiplier: multiplier,
     beijing: beijing,
@@ -313,6 +346,129 @@ export function apply(ctx, config = {}) {
   /* Окно и резерв — ПО СЕССИЯМ: чужой маршрут подставлять нельзя. */
   const sessionWindow = new Map()
   const sessionReserved = new Map()
+
+  /* ── Календарь государственных праздников Китая ─────────────────────────────
+     В праздники КНР DeepSeek держит off-peak круглые сутки. Календарь на год
+     забираем из поддерживаемого источника один раз и кэшируем на диск, поэтому
+     код каждый год не правится. Сеть — только в фоне: isPeak никогда не ждёт
+     ответ и работает по правилу будней, пока календарь не доехал. Свои даты
+     из конфига `holidays` применяются сразу и приоритетнее источника. */
+  const holidayDates = new Set()
+  const manualYears = new Set()
+  const holidayYears = new Map()
+  const holidayDir = cfg.holidayCacheDir || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'cache', 'context-governor')
+
+  /** Развернуть '2026-10-01..2026-10-07' или одиночную дату в список дней. */
+  function expandHolidaySpec(spec) {
+    const out = []
+    const text = String(spec || '').trim()
+    const range = /^(\d{4}-\d{2}-\d{2})\s*\.\.\s*(\d{4}-\d{2}-\d{2})$/.exec(text)
+    if (range) {
+      const start = Date.parse(range[1] + 'T00:00:00Z')
+      const end = Date.parse(range[2] + 'T00:00:00Z')
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return out
+      for (let time = start; time <= end; time += DAY_MS) {
+        const day = new Date(time)
+        out.push(day.getUTCFullYear() + '-' + String(day.getUTCMonth() + 1).padStart(2, '0') + '-' + String(day.getUTCDate()).padStart(2, '0'))
+      }
+      return out
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) out.push(text)
+    return out
+  }
+
+  /** Вытащить даты из ответа источника или из кэша. Источник (chinese-days)
+      отдаёт {holidays:{...}}, наш кэш — {year, dates:[...]}; принимаем и
+      голый массив — источник настраивается конфигом. */
+  function parseHolidayDates(payload) {
+    const out = []
+    const push = function (value) {
+      const text = String(value || '').trim()
+      if (/^\d{4}-\d{2}-\d{2}$/.test(text) && out.indexOf(text) === -1) out.push(text)
+    }
+    if (Array.isArray(payload)) payload.forEach(push)
+    else if (payload && typeof payload === 'object') {
+      if (Array.isArray(payload.dates)) payload.dates.forEach(push)
+      const map = payload.holidays
+      if (Array.isArray(map)) map.forEach(push)
+      else if (map && typeof map === 'object') Object.keys(map).forEach(push)
+    }
+    return out
+  }
+
+  function rememberHolidays(year, dates) {
+    for (const date of dates) if (date.slice(0, 4) === String(year)) holidayDates.add(date)
+    holidayYears.set(year, { status: 'ready', at: Date.now() })
+    try {
+      mkdirSync(holidayDir, { recursive: true })
+      writeFileSync(join(holidayDir, 'holidays-' + year + '.json'), JSON.stringify({ year: year, dates: dates, fetchedAt: new Date().toISOString() }))
+    } catch (error) { /* кэш — удобство, а не обязанность: без него работаем по сети */ }
+  }
+
+  function loadHolidayCache(year) {
+    try {
+      const parsed = JSON.parse(readFileSync(join(holidayDir, 'holidays-' + year + '.json'), 'utf8'))
+      const dates = parseHolidayDates(parsed)
+      if (dates.length === 0) return false
+      for (const date of dates) if (date.slice(0, 4) === String(year)) holidayDates.add(date)
+      holidayYears.set(year, { status: 'ready', at: Date.now() })
+      return true
+    } catch (error) { return false }
+  }
+
+  function fetchHolidays(year) {
+    holidayYears.set(year, { status: 'pending', at: Date.now() })
+    const url = String(cfg.holidayUrl || '').replace('{year}', String(year))
+    if (typeof fetch !== 'function' || !url) {
+      holidayYears.set(year, { status: 'missing', at: Date.now() })
+      return
+    }
+    const controller = typeof AbortController === 'function' ? new AbortController() : null
+    const timer = controller ? setTimeout(function () { controller.abort() }, cfg.holidayTimeoutMs) : null
+    fetch(url, { signal: controller ? controller.signal : undefined })
+      .then(function (response) { return response.ok ? response.json() : null })
+      .then(function (payload) {
+        const dates = parseHolidayDates(payload)
+        if (dates.length === 0) throw new Error('пустой календарь праздников')
+        rememberHolidays(year, dates)
+        log('праздники ' + year + ': календарь загружен (' + dates.length + ' дней)')
+      })
+      .catch(function () {
+        holidayYears.set(year, { status: 'missing', at: Date.now() })
+        log('праздники ' + year + ': календарь недоступен, тариф считаем по дням недели')
+      })
+      .finally(function () { if (timer) clearTimeout(timer) })
+  }
+
+  /** Догрузить календарь на текущий пекинский год и следующий (счётчик смотрит
+      вперёд через Новый год). Синхронно только чтение кэша; сеть — в фоне. */
+  function ensureHolidays(at) {
+    const beijingYear = new Date(at.getTime() + BEIJING_OFFSET_MS).getUTCFullYear()
+    for (const year of [beijingYear, beijingYear + 1]) {
+      const state = holidayYears.get(year)
+      if (state && state.status === 'ready') continue
+      if (state && state.status === 'pending') continue
+      if (state && state.status === 'missing' && Date.now() - state.at < cfg.holidayRetryMs) continue
+      if (loadHolidayCache(year)) continue
+      if (cfg.holidayFetch) fetchHolidays(year)
+      else holidayYears.set(year, { status: 'missing', at: Date.now() })
+    }
+  }
+
+  /** Знаем ли календарь на пекинский год момента: загружен из кэша/сети или
+      задан вручную. Иначе клиент честно помечает тариф как приблизительный. */
+  function holidayKnown(at) {
+    const year = new Date(at.getTime() + BEIJING_OFFSET_MS).getUTCFullYear()
+    const state = holidayYears.get(year)
+    return (state && state.status === 'ready') || manualYears.has(year)
+  }
+
+  for (const spec of Array.isArray(cfg.holidays) ? cfg.holidays : []) {
+    for (const date of expandHolidaySpec(spec)) {
+      holidayDates.add(date)
+      manualYears.add(Number(date.slice(0, 4)))
+    }
+  }
 
   function routeKey(provider, model) {
     return String(provider || '?') + '/' + String(model || '?')
@@ -630,7 +786,7 @@ export function apply(ctx, config = {}) {
     const provider = cap.route ? cap.route.split('/')[0] : ''
     const priced = isPricedProvider(cfg, provider)
     const at = new Date()
-    const season = priced ? seasonAt(at, cfg.peakMultiplier) : null
+    const season = priced ? seasonAt(at, cfg.peakMultiplier, holidayDates) : null
     const rate = priced ? ratesAt(cfg, season) : null
     /* Cache-hit — доля prompt, отданная из кэша на чтение; запись в кэш хитом
        не является. Считаем по ИТОГАМ сессии, как чип harness («Cache hit»), —
@@ -829,7 +985,9 @@ export function apply(ctx, config = {}) {
        (это просто индикатор времени), rates и cost считаются ТОЛЬКО для провайдеров
        с известными ставками (DeepSeek); для чужих — null, и окно пишет «нет данных». */
     const priced = isPricedProvider(cfg, activeProvider)
-    const season = seasonAt(new Date(now), cfg.peakMultiplier)
+    ensureHolidays(new Date(now))
+    const season = seasonAt(new Date(now), cfg.peakMultiplier, holidayDates)
+    season.holidayKnown = holidayKnown(new Date(now))
     const rates = priced ? ratesAt(cfg, season) : null
     if (current) {
       /* Сигналы траты — не размер контекста, а свежие токены и провал кэша:
@@ -1137,7 +1295,8 @@ export function apply(ctx, config = {}) {
     bootstrapDefaultRoute()
   }
 
-  const bootSeason = seasonAt(new Date(), cfg.peakMultiplier)
-  log('ready: тариф ' + (bootSeason.peak ? 'пик' : 'off-peak') + ' (×' + bootSeason.multiplier + '), смена через ' + bootSeason.countdown +
+  ensureHolidays(new Date())
+  const bootSeason = seasonAt(new Date(), cfg.peakMultiplier, holidayDates)
+  log('ready: тариф ' + (bootSeason.peak ? 'пик' : bootSeason.holiday ? 'off-peak (праздник Китая)' : 'off-peak') + ' (×' + bootSeason.multiplier + '), смена через ' + bootSeason.countdown +
     '; баланс ' + (cfg.balanceEnabled ? 'включён (' + (cfg.useAccountBalance ? 'аккаунт, иначе API-ключ' : 'только API-ключ') + ', кэш ' + cfg.balanceTtlMs + ' мс)' : 'выключен'))
 }

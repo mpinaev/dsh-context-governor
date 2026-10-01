@@ -9,7 +9,9 @@
  * Run with: node test/smoke.mjs   (or: npm test)
  */
 
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 /* The DeepSeek balance must not be attempted for real: without a credentials
    service the plugin falls back to the environment, so clear it here. */
@@ -17,6 +19,8 @@ delete process.env.DEEPSEEK_API_KEY
 
 const root = new URL('..', import.meta.url)
 const RATES = { freshRate: 0.15, cacheReadRate: 0.003, cacheWriteRate: 0.15, outputRate: 0.6, peakMultiplier: 2 }
+/* Никакой сети и никакого чужого кэша: тесты должны быть детерминированными. */
+const OFFLINE = { holidayFetch: false, holidayCacheDir: mkdtempSync(join(tmpdir(), 'ctx-gov-')) }
 
 let passed = 0
 let failed = 0
@@ -118,7 +122,7 @@ async function main() {
 
   console.log('projection path')
   const h = makeHarness()
-  mod.apply(h.ctx, Object.assign({}, RATES, { balanceEnabled: true, useAccountBalance: true }))
+  mod.apply(h.ctx, Object.assign({}, RATES, OFFLINE, { balanceEnabled: true, useAccountBalance: true }))
 
   const cline = { header: { id: 'sess-cline' } }
   feedSession(h, cline, {
@@ -165,6 +169,59 @@ async function main() {
   const d = await statusOf(h, 'sess-deepseek')
   eq('deepseek threshold', d.config.compactThreshold, 678464)
   ok('deepseek balance is attempted', d.balance.state === 'no-credential', JSON.stringify(d.balance))
+  /* Календаря нет (сеть выключена) — клиент должен знать, что тариф приблизительный. */
+  eq('missing holiday calendar is reported', d.season.holidayKnown, false)
+
+  console.log('tariff calendar: Chinese public holidays')
+  /* DeepSeek: пик — будни 09:00–12:00 и 14:00–18:00 по Пекину, НО в гос.
+     праздники Китая off-peak круглые сутки. 1–7 октября 2026 — Национальный
+     день; 8 октября — первый рабочий день; 10 октября — рабочая суббота
+     (перенос), но для DeepSeek выходные всё равно off-peak. */
+  const bj = (y, mo, day, hh, mm) => new Date(Date.UTC(y, mo - 1, day, hh, mm) - 8 * 3600 * 1000)
+  const nationalDay = new Set(Array.from({ length: 7 }, (_, i) => '2026-10-0' + (i + 1)))
+  const octFirst = bj(2026, 10, 1, 9, 49)
+  eq('a weekday peak is peak without a calendar', mod.isPeak(octFirst, new Set()), true)
+  eq('National Day is off-peak even on a Thursday', mod.isPeak(octFirst, nationalDay), false)
+  eq('the next working day is peak again', mod.isPeak(bj(2026, 10, 8, 9, 30), nationalDay), true)
+  eq('a weekend stays off-peak', mod.isPeak(bj(2026, 10, 3, 10, 0), nationalDay), false)
+  eq('a workday-adjusted Saturday stays off-peak', mod.isPeak(bj(2026, 10, 10, 10, 0), nationalDay), false)
+  eq('countdown skips the whole 7-day holiday',
+    mod.nextFlip(octFirst, nationalDay).valueOf(), bj(2026, 10, 8, 9, 0).valueOf())
+
+  const h4 = makeHarness()
+  const todayKey = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)
+  mod.apply(h4.ctx, Object.assign({}, RATES, OFFLINE, { holidays: [todayKey] }))
+  feedSession(h4, { header: { id: 'sess-holiday' } }, {
+    provider: 'deepseek-official',
+    model: 'deepseek-flash',
+    maxTokens: 256000,
+    window: 1000000,
+    buckets: { uncachedInputTokens: 10, cacheReadTokens: 20, cacheWriteTokens: 0, outputTokens: 5 },
+  })
+  await tick()
+  const manual = await statusOf(h4, 'sess-holiday')
+  eq('a manual holiday marks the day off-peak', manual.season.holiday, true)
+  eq('a manual holiday counts as a known calendar', manual.season.holidayKnown, true)
+
+  /* Второй запуск без сети должен поднять календарь с диска, а не потерять его. */
+  const cacheDir = mkdtempSync(join(tmpdir(), 'ctx-gov-cache-'))
+  const cacheYear = Number(todayKey.slice(0, 4))
+  mkdirSync(cacheDir, { recursive: true })
+  writeFileSync(join(cacheDir, 'holidays-' + cacheYear + '.json'),
+    JSON.stringify({ year: cacheYear, dates: [todayKey], fetchedAt: 'test' }))
+  const h5 = makeHarness()
+  mod.apply(h5.ctx, Object.assign({}, RATES, OFFLINE, { holidayFetch: false, holidayCacheDir: cacheDir }))
+  feedSession(h5, { header: { id: 'sess-cache' } }, {
+    provider: 'deepseek-official',
+    model: 'deepseek-flash',
+    maxTokens: 256000,
+    window: 1000000,
+    buckets: { uncachedInputTokens: 10, cacheReadTokens: 20, cacheWriteTokens: 0, outputTokens: 5 },
+  })
+  await tick()
+  const cached = await statusOf(h5, 'sess-cache')
+  eq('the on-disk calendar is used offline', cached.season.holiday, true)
+  eq('the cached calendar counts as known', cached.season.holidayKnown, true)
 
   console.log('cache-hit: session scope, honest percent')
   /* Живой случай: последний шаг 534912/535089 = 99.97% (старый Math.round давал
@@ -198,7 +255,7 @@ async function main() {
 
   console.log('unknown window')
   const h2 = makeHarness({ llm: false })
-  mod.apply(h2.ctx, Object.assign({}, RATES, { balanceEnabled: true }))
+  mod.apply(h2.ctx, Object.assign({}, RATES, OFFLINE, { balanceEnabled: true }))
   const bare = { header: { id: 'sess-bare' } }
   feedSession(h2, bare, {
     provider: 'cline',
@@ -216,7 +273,7 @@ async function main() {
 
   console.log('llm/stream fallback')
   const h3 = makeHarness({ projections: false })
-  mod.apply(h3.ctx, Object.assign({}, RATES, { balanceEnabled: false }))
+  mod.apply(h3.ctx, Object.assign({}, RATES, OFFLINE, { balanceEnabled: false }))
   ok('fallback subscribed', Array.isArray(h3.hooks['llm/stream']) && h3.hooks['llm/stream'].length === 1)
   const onEvent = h3.hooks['session/event'][0]
   onEvent({ header: { id: 'sess-stream' } }, {

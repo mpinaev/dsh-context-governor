@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- The peak/off-peak tariff now honours Chinese public holidays. DeepSeek's rule
+  is peak on weekdays **excluding Chinese public holidays**, and off-peak all day
+  on those holidays — but the plugin only knew weekdays and hours, so on the
+  National Day holidays (1–7 October 2026) it reported `peak (×2)` and doubled
+  the rates and the step cost while DeepSeek was charging the off-peak half.
+  The year's calendar is fetched in the background from a maintained source
+  (`holidayUrl`, default `chinese-days` data), cached on disk under
+  `<DSH_HOME>/cache/context-governor`, and refreshed on its own — no yearly code
+  edit. `holidays` config takes `'YYYY-MM-DD'` dates or ranges and wins over the
+  source; `holidayFetch: false` keeps the plugin fully offline. Until the
+  calendar is known the weekday rule applies and the panel says so
+  (`season.holidayKnown`); the countdown now skips whole holidays to the next
+  working peak, and the tariff row reads "off-peak (Chinese holiday)".
+
 ## 0.2.3
 
 - Documentation release, no code changes. The npm page renders the README from
