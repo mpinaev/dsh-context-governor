@@ -15,6 +15,10 @@
   calendar is known the weekday rule applies and the panel says so
   (`season.holidayKnown`); the countdown now skips whole holidays to the next
   working peak, and the tariff row reads "off-peak (Chinese holiday)".
+- `README.zh.md`: a full Chinese translation of the README, since the plugin
+  already ships a Chinese interface. The language switcher in both existing
+  READMEs links to it, and the stale assertion count in the dev section was
+  corrected to match the smoke test.
 
 ## 0.2.3
 

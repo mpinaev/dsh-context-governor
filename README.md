@@ -1,6 +1,6 @@
 # dsh-context-governor
 
-**English** | [Русский](README.ru.md)
+**English** | [Русский](README.ru.md) | [中文](README.zh.md)
 
 [![npm](https://img.shields.io/npm/v/dsh-context-governor)](https://www.npmjs.com/package/dsh-context-governor)
 [![CI](https://github.com/mpinaev/dsh-context-governor/actions/workflows/ci.yml/badge.svg)](https://github.com/mpinaev/dsh-context-governor/actions/workflows/ci.yml)
@@ -91,7 +91,7 @@ is probably disabled, and `dsh --dump-config` will say so.
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 34 assertions: no network, no model calls
+npm test                     # 58 assertions: no network, no model calls
 ./scripts/compat-check.sh    # boots a spare instance on 3099 and asks its API
 dsh plugin --profile web add "link:$PWD"
 ```

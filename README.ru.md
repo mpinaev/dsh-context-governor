@@ -1,6 +1,6 @@
 # dsh-context-governor
 
-[English](README.md) | **Русский**
+[English](README.md) | **Русский** | [中文](README.zh.md)
 
 [![npm](https://img.shields.io/npm/v/dsh-context-governor)](https://www.npmjs.com/package/dsh-context-governor)
 [![CI](https://github.com/mpinaev/dsh-context-governor/actions/workflows/ci.yml/badge.svg)](https://github.com/mpinaev/dsh-context-governor/actions/workflows/ci.yml)
@@ -89,7 +89,7 @@ DSH **отключает** плагин, если объявленный диа�
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 34 проверки: без сети и без вызовов модели
+npm test                     # 58 проверок: без сети и без вызовов модели
 ./scripts/compat-check.sh    # поднимет отдельный инстанс на 3099 и спросит его API
 dsh plugin --profile web add "link:$PWD"
 ```
