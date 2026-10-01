@@ -57,5 +57,16 @@ jobs:
               "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org")
             echo "oidc token request: HTTP $code"
           fi
+      # Trusted publishing should authenticate over OIDC on its own. It does not
+      # here — npm reports ENEEDAUTH although the OIDC endpoint answers 200 — so
+      # fall back to an explicit --provenance publish: that path also carries the
+      # OIDC hand-off, and its error (if any) tells us whether npm reaches the
+      # registry at all under the trusted identity.
       - name: Publish to npm
-        run: npm publish
+        run: |
+          if npm publish; then
+            echo "published through trusted publishing without extra flags"
+          else
+            echo "::warning::plain publish did not use OIDC; retrying with --provenance"
+            npm publish --provenance
+          fi
