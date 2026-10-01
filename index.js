@@ -76,6 +76,8 @@ const DEFAULTS = {
          (пик будней + праздники Китая). По умолчанию true у id на `deepseek`
          и false у остальных: у чужого провайдера сезонного тарифа нет, и
          множить его ставки на пик DeepSeek нельзя;
+       cached: false — у провайдера нет кэша промпта: ставки и строки кэша не
+         показываем, а сигналы cache-hit и «холодный префилл» молчат;
        peakMultiplier — свой множитель пика (если seasonal).
      Провайдер со своими ставками считается priced и без pricedProviders. */
   providerRates: {},
@@ -244,6 +246,15 @@ function isSeasonalProvider(cfg, provider) {
   const profile = providerProfile(cfg, provider)
   if (profile && typeof profile.seasonal === 'boolean') return profile.seasonal
   return String(provider || '').indexOf('deepseek') === 0
+}
+
+/** Бывает ли у провайдера кэш промпта. Если кэша нет, cache-read и cache-write
+    всегда нули (на цену они и так не влияют), а сигналы про кэш — cache-hit и
+    «холодный префилл» — теряют смысл: свежим становится весь вход по определению.
+    По умолчанию кэш считаем существующим. */
+function isCachedProvider(cfg, provider) {
+  const profile = providerProfile(cfg, provider)
+  return !(profile && profile.cached === false)
 }
 
 /** Свой множитель пика у провайдера или общий. */
@@ -1068,14 +1079,17 @@ export function apply(ctx, config = {}) {
       season.holidayKnown = holidayKnown(new Date(now))
     }
     const rates = priced ? ratesAt(cfg, activeProvider, season ? season.multiplier : 1) : null
+    /* У провайдера без кэша cache-hit всегда 0, а весь вход — свежий: сигналы
+       про кэш у него не срабатывают (иначе висели бы на каждом шаге). */
+    const cached = isCachedProvider(cfg, activeProvider)
     if (current) {
       /* Сигналы траты — не размер контекста, а свежие токены и провал кэша:
          при 99% cache-hit абсолютный prompt стоит копейки (кэш в 50x дешевле). */
       /* Предупреждения — кодами: текст собирает клиент на своём языке. */
-      if (current.cacheHitPct < cfg.cacheHitFloorPct) {
+      if (cached && current.cacheHitPct < cfg.cacheHitFloorPct) {
         warnings.push({ code: 'cacheHitLow', pct: current.cacheHitPct, floor: cfg.cacheHitFloorPct })
       }
-      if (current.freshDelta >= cfg.anomalyDelta || current.fresh >= cfg.base) {
+      if (cached && (current.freshDelta >= cfg.anomalyDelta || current.fresh >= cfg.base)) {
         warnings.push({ code: 'coldPrefill', fresh: current.fresh, usd: priced ? Number(((current.fresh * rates.fresh) / 1000000).toFixed(4)) : null })
       }
       if (priced && current.costUsd !== null && current.costUsd >= cfg.anomalyCostUsd) {
@@ -1104,6 +1118,9 @@ export function apply(ctx, config = {}) {
         /* Знает ли плагин ставки этого провайдера. false — цену шага не считаем
            и клиент не показывает её вовсе (ни в чипе, ни в панели). */
         priced: priced,
+        /* Есть ли у провайдера кэш промпта. false — клиент не показывает
+           cache-hit и ставки на кэш, а сигналы про кэш host не шлёт. */
+        cached: cached,
       },
       current: current,
       children: children,

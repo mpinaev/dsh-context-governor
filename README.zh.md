@@ -131,7 +131,11 @@ threshold = min(thresholdRatio * window, window - reserve - headroom)
 
 **三个输入桶，各有各的费率。** 缓存读取（默认 $0.003/1M）比新输入便宜 50 倍，
 而 DeepSeek 的缓存写入按普通输入计费（`cacheWriteRate`，默认 = `freshRate`）。
-缓存命中是 prompt 中**在读取时**由缓存提供的比例；缓存写入不算命中。
+缓存命中是 prompt 中**在读取时**由缓存提供的比例；缓存写入不算命中。完全没有
+prompt 缓存的提供方在其 `providerRates` 记录里写 `cached: false`：缓存各行、缓存
+费率与缓存命中标记都会消失，`cacheHitLow` 和“冷预填”告警也不再发声。没有这个
+开关，它们会在每一步都挂着——没有缓存的提供方缓存命中永远是 0%，而按定义整个输入
+都算新输入。
 
 **钱。** DSH 和提供方都不在任何地方以美元报告 token 费用，因此插件自带费率表
 （对它不认识的提供方默认关闭）。所以胶囊/余额的逻辑是：
@@ -268,7 +272,7 @@ band i                = bandRatios[i] * compaction threshold
 在 `~/.dsh/profiles/web/cordis.patch.yml` 的 `context-governor` 块里只能调
 `bandRatios`、`headroomTokens`、`thresholdRatio`，默认费率（`freshRate`、
 `cacheReadRate`、`cacheWriteRate`、`outputRate`、`peakMultiplier`），按提供方的
-覆盖（`pricedProviders`、`providerRates`——费率、`seasonal`、`peakMultiplier`）与
+覆盖（`pricedProviders`、`providerRates`——费率、`seasonal`、`cached`、`peakMultiplier`）与
 信号阈值（`anomalyDelta`、`anomalyCostUsd`、`cacheHitFloorPct`）；节假日日历——
 `holidays`、`holidayFetch`、`holidayUrl`、`holidayCacheDir`、`holidayRetryMs`、
 `holidayTimeoutMs`；余额——`balanceEnabled`、`useAccountBalance`、

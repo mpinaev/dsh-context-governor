@@ -321,6 +321,41 @@ async function main() {
      с ожидаемым множителем, а не с фиксированным числом. */
   eq('the default rates apply there', seas.rates.fresh, 0.15 * (seas.season.peak ? 2 : 1))
 
+  console.log('a provider without a prompt cache')
+  /* Кэша нет: cache-read/write всегда нули, и сигналы про кэш должны молчать —
+     иначе cacheHitLow и coldPrefill висят на каждом шаге. Вход берём большой
+     (>= base), чтобы coldPrefill точно сработал, если его не заглушить. */
+  const cacheless = { uncachedInputTokens: 200000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 100 }
+  const hNoCache = makeHarness()
+  mod.apply(hNoCache.ctx, Object.assign({}, RATES, OFFLINE, {
+    pricedProviders: [],
+    providerRates: { nocache: { freshRate: 1, cacheReadRate: 0.1, cacheWriteRate: 1, outputRate: 2, seasonal: false, cached: false } },
+    balanceEnabled: false,
+  }))
+  feedSession(hNoCache, { header: { id: 'sess-nocache' } }, {
+    provider: 'nocache', model: 'plain', maxTokens: 8192, window: 200000, buckets: cacheless,
+  })
+  await tick()
+  const noCache = await statusOf(hNoCache, 'sess-nocache')
+  eq('a cacheless provider is reported to the client', noCache.config.cached, false)
+  ok('no cache-hit or cold-prefill alarm without a cache',
+    !noCache.warnings.some((w) => w.code === 'cacheHitLow' || w.code === 'coldPrefill'), JSON.stringify(noCache.warnings))
+  /* (200000*1 + 100*2) / 1e6 = 0.2002: кэш-вёдра нулевые и на цену не влияют. */
+  eq('the step cost ignores the cache buckets', noCache.current.costUsd, 0.2002)
+
+  /* Тот же вход у кэширующего провайдера — оба сигнала обязаны сработать. */
+  const hCached = makeHarness()
+  mod.apply(hCached.ctx, Object.assign({}, RATES, OFFLINE, { balanceEnabled: false }))
+  feedSession(hCached, { header: { id: 'sess-cached' } }, {
+    provider: 'deepseek-official', model: 'deepseek-flash', maxTokens: 256000, window: 1000000, buckets: cacheless,
+  })
+  await tick()
+  const caching = await statusOf(hCached, 'sess-cached')
+  eq('a caching provider is reported as cached', caching.config.cached, true)
+  ok('a caching provider still gets both cache alarms',
+    caching.warnings.some((w) => w.code === 'cacheHitLow') && caching.warnings.some((w) => w.code === 'coldPrefill'),
+    JSON.stringify(caching.warnings))
+
   console.log('tariff calendar: Chinese public holidays')
   /* DeepSeek: пик — будни 09:00–12:00 и 14:00–18:00 по Пекину, НО в гос.
      праздники Китая off-peak круглые сутки. 1–7 октября 2026 — Национальный
@@ -476,6 +511,12 @@ async function main() {
     season: { peak: true, holiday: false, countdown: '2h', multiplier: 2, beijing: { weekdayIndex: 4, clock: '10:00' }, color: '#EF4444', holidayKnown: true },
     balance: { ok: true, state: 'ok', source: 'api-key', currency: 'USD', total: 8.95, granted: 0, toppedUp: 8.95, isAvailable: true },
   })
+  /* Провайдер без кэша: цену показываем, но без кэш-строк и кэш-ставок. */
+  const noCachePayload = statusPayload({
+    config: { base: 100000, compactThreshold: 126272, windowTokens: 200000, reservedTokens: 8192, route: 'other/model', windowSource: 'catalog', provider: 'other', priced: true, cached: false },
+    current: { session: 's', prompt: 1000, fresh: 1000, cacheRead: 0, cacheWrite: 0, output: 100, freshDelta: 1000, cacheHitPct: 0, cacheHitText: '0', relative: 0.01, costUsd: 0.0012, band: 0, ts: 1 },
+    rates: { fresh: 1, cacheRead: 0.1, cacheWrite: 1, output: 2 },
+  })
   for (const lang of ['en', 'ru', 'zh']) {
     const M = messages[lang]
     /* Строки про тариф ловим по уникальным подписям: у zh «费率» — часть
@@ -499,6 +540,17 @@ async function main() {
     ok('a seasonal provider shows the tariff (' + lang + ')',
       priceRows(seasonal) && seasonRows(seasonal) && seasonal.includes('×2') && seasonal.includes('$0.0013'),
       seasonal)
+
+    /* Провайдер без кэша: ни строк, ни ставок, ни процента кэша. */
+    const cacheless = clientRender(clientSource, noCachePayload, lang)
+    ok('no cache rows on a cacheless provider (' + lang + ')',
+      !cacheless.includes(M.rows.cacheRead) && !cacheless.includes(M.rows.cacheWrite) &&
+        !cacheless.includes(M.rows.cacheHit) && !cacheless.includes('0%'),
+      cacheless)
+    ok('a cacheless provider drops the cache rates (' + lang + ')',
+      cacheless.includes(M.ratesFmt(noCachePayload.rates, false)) &&
+        !cacheless.includes(M.ratesFmt(noCachePayload.rates, true)),
+      cacheless)
   }
 
   console.log('')

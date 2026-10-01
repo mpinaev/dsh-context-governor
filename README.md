@@ -149,7 +149,11 @@ of another model's threshold. No bands are invented while the window is unknown.
 is 50 times cheaper than fresh input, while a cache write on DeepSeek is billed as
 ordinary input (`cacheWriteRate`, default = `freshRate`). Cache-hit is the
 share of the prompt served from cache **on read**; a cache write does not count as
-a hit.
+a hit. A provider that has no prompt cache at all declares `cached: false` in its
+`providerRates` entry: the cache rows, the cache rates and the cache-hit marker
+disappear, and the `cacheHitLow` and cold-prefill warnings stay quiet. Without the
+flag they would hang on every step — a cacheless provider reads 0% cache-hit and
+sends the whole prompt as fresh input by definition.
 
 **Money.** Neither DSH nor the provider reports token cost in dollars anywhere, so
 the plugin keeps its own rates table (off by default for providers it does not
@@ -322,7 +326,7 @@ In the `context-governor` block of `~/.dsh/profiles/web/cordis.patch.yml` you
 can tune only `bandRatios`, `headroomTokens`, `thresholdRatio`, the default rates
 (`freshRate`, `cacheReadRate`, `cacheWriteRate`, `outputRate`,
 `peakMultiplier`), the per-provider overrides (`pricedProviders`,
-`providerRates` — rates, `seasonal`, `peakMultiplier`) and the signal thresholds
+`providerRates` — rates, `seasonal`, `cached`, `peakMultiplier`) and the signal thresholds
 (`anomalyDelta`, `anomalyCostUsd`, `cacheHitFloorPct`); for the holiday calendar —
 `holidays`, `holidayFetch`, `holidayUrl`, `holidayCacheDir`, `holidayRetryMs`,
 `holidayTimeoutMs`; for the balance — `balanceEnabled`,

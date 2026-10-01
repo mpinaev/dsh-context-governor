@@ -54,6 +54,14 @@
   `providerRates` entry to opt in. Behaviour change: a non-DeepSeek provider no
   longer has its rates doubled in DeepSeek's peak hours, and it gets neither the
   tariff marker nor the tariff rows.
+- `providerRates.<id>.cached: false` for a provider with no prompt cache. The
+  arithmetic already worked (zero cache buckets contribute nothing), but the UI
+  and the signals did not know: the rates row still listed cache-read/cache-write
+  prices, the panel showed cache rows and a permanent 0% cache-hit, and the
+  `cacheHitLow` warning fired on every step because 0% is below the 90% floor —
+  plus a cold-prefill alarm on each request, since every token is fresh by
+  definition there. With the flag the cache rows, the cache rates, the chip's
+  cache-hit marker and both warnings go away; a caching provider is unaffected.
 
 ## 0.2.3
 

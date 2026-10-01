@@ -145,7 +145,11 @@ Cache-hit считается по итогам сессии, а не по одн
 $0.003/1M) в 50 раз дешевле свежего входа, а запись в кэш у DeepSeek
 тарифицируется как обычный вход (`cacheWriteRate`, по умолчанию = `freshRate`).
 Cache-hit — это доля prompt, отданная из кэша **на чтение**; запись в кэш хитом
-не считается.
+не считается. Провайдер, у которого кэша нет вовсе, ставит `cached: false` в своей
+записи `providerRates`: кэш-строки, кэш-ставки и метка cache-hit пропадают, а
+предупреждения `cacheHitLow` и «холодный префилл» молчат. Без флага они висели бы
+на каждом шаге: у провайдера без кэша cache-hit всегда 0%, а свежим по определению
+становится весь вход.
 
 **Деньги.** Ни harness, ни провайдер не сообщают стоимость токенов в долларах:
 никакой цены нет ни в модели, ни в проекции, ни в сервисе. Поэтому плагин
@@ -312,7 +316,7 @@ CNY, сумма — до цента. Плагин не пересчитывае�
 только `bandRatios`, `headroomTokens`, `thresholdRatio`, общие ставки
 (`freshRate`, `cacheReadRate`, `cacheWriteRate`, `outputRate`, `peakMultiplier`),
 переопределения по провайдеру (`pricedProviders`, `providerRates` — ставки,
-`seasonal`, `peakMultiplier`) и пороги сигналов (`anomalyDelta`, `anomalyCostUsd`,
+`seasonal`, `cached`, `peakMultiplier`) и пороги сигналов (`anomalyDelta`, `anomalyCostUsd`,
 `cacheHitFloorPct`); календарь праздников — `holidays`, `holidayFetch`, `holidayUrl`,
 `holidayCacheDir`, `holidayRetryMs`, `holidayTimeoutMs`; баланс — `balanceEnabled`,
 `useAccountBalance`, `balanceProviders`, `balanceTtlMs`, `balanceTimeoutMs`.

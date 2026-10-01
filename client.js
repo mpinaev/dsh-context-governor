@@ -69,7 +69,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       season: { peak: 'peak', off: 'off-peak', holiday: 'Chinese holiday' },
       holidayUnknown: 'not loaded (weekdays only)',
       balanceState: { disabled: 'disabled', 'no-credential': 'no API key', error: 'error', empty: 'empty', 'other-provider': 'DeepSeek only' },
-      ratesFmt: function (r) { return 'in ' + r.fresh + ', cache-read ' + r.cacheRead + ', cache-write ' + r.cacheWrite + ', out ' + r.output },
+      ratesFmt: function (r, cached) { return 'in ' + r.fresh + (cached === false ? '' : ', cache-read ' + r.cacheRead + ', cache-write ' + r.cacheWrite) + ', out ' + r.output },
       seasonTitle: function (season, day, clock) {
         var when = season.holiday
           ? 'Chinese public holiday: off-peak all day, half price.'
@@ -128,7 +128,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       season: { peak: '高峰', off: '低谷', holiday: '中国法定节假日' },
       holidayUnknown: '未加载（仅按工作日）',
       balanceState: { disabled: '已关闭', 'no-credential': '未配置 API 密钥', error: '错误', empty: '空响应', 'other-provider': '仅限 DeepSeek' },
-      ratesFmt: function (r) { return '输入 ' + r.fresh + '，缓存读 ' + r.cacheRead + '，缓存写 ' + r.cacheWrite + '，输出 ' + r.output },
+      ratesFmt: function (r, cached) { return '输入 ' + r.fresh + (cached === false ? '' : '，缓存读 ' + r.cacheRead + '，缓存写 ' + r.cacheWrite) + '，输出 ' + r.output },
       seasonTitle: function (season, day, clock) {
         var when = season.holiday
           ? '中国法定节假日：全天低谷价（半价）。'
@@ -187,7 +187,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       season: { peak: 'пик', off: 'off-peak', holiday: 'праздник Китая' },
       holidayUnknown: 'не загружен (только будни)',
       balanceState: { disabled: 'выключен', 'no-credential': 'нет API-ключа', error: 'ошибка', empty: 'пустой ответ', 'other-provider': 'только для DeepSeek' },
-      ratesFmt: function (r) { return 'вход ' + r.fresh + ', чтение ' + r.cacheRead + ', запись ' + r.cacheWrite + ', output ' + r.output },
+      ratesFmt: function (r, cached) { return 'вход ' + r.fresh + (cached === false ? '' : ', чтение ' + r.cacheRead + ', запись ' + r.cacheWrite) + ', output ' + r.output },
       seasonTitle: function (season, day, clock) {
         var when = season.holiday
           ? 'Государственный праздник Китая: весь день off-peak, вдвое дешевле.'
@@ -449,23 +449,28 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
        подсказке: выдуманное «цена неизвестна» там только мешает.
        `priced` приходит от host; старый host без поля — прежнее поведение. */
     var showPrice = cfgInfo.priced !== false
+    /* У провайдера без кэша (cached: false от host) cache-hit всегда 0, и
+       показывать его и ставки на кэш нечего. Старый host без поля — как раньше. */
+    var cachedProvider = cfgInfo.cached !== false
     var knownPrice = showPrice && cur && cur.costUsd != null
     var costText = knownPrice ? ('$' + fmtUsd(cur.costUsd)) : M.noPrice
     var seasonText = season ? (season.peak ? '⚡' + season.countdown : '🌙' + season.countdown) : ''
     var balText = fmtMoney(bal)
     var labelParts = cur ? [M.ctx + ' ' + fmtTok(cur.prompt)] : []
     if (cur && showPrice) labelParts.push(costText)
-    if (cur) labelParts.push(cacheHitLabel(cur, M))
+    if (cur && cachedProvider) labelParts.push(cacheHitLabel(cur, M))
     var label = cur ? labelParts.join(' · ') + kidsNote : M.ctx + ' ' + M.dash
     var tipParts = cur
       ? [
           M.tipContext + ' ' + cur.prompt + ' (' + M.band[band] + ')',
           M.rows.fresh + ' ' + cur.fresh,
-          M.rows.cacheRead + ' ' + cur.cacheRead,
-          M.rows.cacheWrite + ' ' + cur.cacheWrite,
-          M.rows.cacheHit + ' ' + cacheHitLabel(cur, M),
         ]
       : []
+    if (cur && cachedProvider) {
+      tipParts.push(M.rows.cacheRead + ' ' + cur.cacheRead)
+      tipParts.push(M.rows.cacheWrite + ' ' + cur.cacheWrite)
+      tipParts.push(M.rows.cacheHit + ' ' + cacheHitLabel(cur, M))
+    }
     if (cur && showPrice) tipParts.push(knownPrice ? ('~$' + fmtUsd(cur.costUsd) + ' ' + M.perStep + ' (x' + cur.relative + ' ' + M.rows.relative + ' ' + (cfgInfo.base || '') + ')') : (M.noPrice + ' ' + M.perStep))
     if (cur && cfgInfo.windowTokens) tipParts.push(M.rows.window + ' ' + cfgInfo.windowTokens + ' (' + (cfgInfo.route || '') + ')')
     if (season) tipParts.push(seasonTitleText(season, M, lang))
@@ -492,9 +497,10 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         ? [
             [M.rows.prompt, cur.prompt],
             [M.rows.fresh, cur.fresh],
-            [M.rows.cacheRead, cur.cacheRead],
-            [M.rows.cacheWrite, cur.cacheWrite],
-            [M.rows.cacheHit, cacheHitLabel(cur, M)],
+            /* Кэш-строки — только у провайдера, у которого кэш вообще есть. */
+            cachedProvider ? [M.rows.cacheRead, cur.cacheRead] : null,
+            cachedProvider ? [M.rows.cacheWrite, cur.cacheWrite] : null,
+            cachedProvider ? [M.rows.cacheHit, cacheHitLabel(cur, M)] : null,
             [M.rows.output, cur.output],
             [M.rows.cold, '+' + cur.freshDelta],
             /* Цену показываем только на провайдерах с известными ставками;
@@ -511,7 +517,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
             season ? [M.rows.tariff, seasonLabelText(season, M, showPrice), peakColor] : null,
             season ? [M.rows.tariffFlip, season.countdown + ' → ' + (season.peak ? M.season.off : M.season.peak), peakColor] : null,
             season ? [M.rows.beijing, weekdayName(season, M, lang) + ' ' + season.beijing.clock, peakColor] : null,
-            showPrice ? [M.rows.rates, data.rates ? M.ratesFmt(data.rates) : M.noPrice] : null,
+            showPrice ? [M.rows.rates, data.rates ? M.ratesFmt(data.rates, cachedProvider) : M.noPrice] : null,
             [M.rows.balance, balanceStateText(bal, M), bal && bal.ok ? peakColor : null],
           ].filter(Boolean)
         : [[M.tipContext, M.noData]]
