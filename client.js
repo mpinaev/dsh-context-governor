@@ -53,6 +53,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       unavailable: 'unavailable',
       noData: 'No data',
       noPrice: 'price unavailable',
+      balanceUnknown: 'balance unknown (not DeepSeek)',
       tipContext: 'Context',
       perStep: 'per step',
       rows: {
@@ -112,6 +113,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       unavailable: '不可用',
       noData: '无数据',
       noPrice: '价格未知',
+      balanceUnknown: '余额未知（非 DeepSeek）',
       tipContext: '上下文',
       perStep: '每步',
       rows: {

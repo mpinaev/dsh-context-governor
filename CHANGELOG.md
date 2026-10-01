@@ -31,6 +31,12 @@
   is now red during peak (it was amber), and the client paints the chip balance,
   the chip tariff marker, and the panel's tariff / countdown / Beijing-time /
   balance rows with it, so the expensive hours read at a glance.
+- Fixed a literal "undefined" in the English and Chinese interfaces. The client's
+  `balanceUnknown` string existed only in the Russian dictionary, so on a
+  non-DeepSeek provider the panel's balance row and the chip tooltip rendered
+  `undefined` instead of text. A smoke test now compares each language's keys
+  against English recursively, so a missing key fails the suite instead of
+  leaking into the UI.
 
 ## 0.2.3
 

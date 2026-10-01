@@ -41,6 +41,40 @@ function eq(name, actual, expected) {
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
+/** Словари интерфейса не экспортируются из клиентского бандла, поэтому вытаскиваем
+    литерал MESSAGES из исходника. Пропущенный в языке ключ даёт «undefined» прямо
+    в панели — так и вылез balanceUnknown, который был только в ru. */
+function clientMessages(source) {
+  const marker = source.match(/MESSAGES\s*=\s*\{/)
+  if (!marker) throw new Error('MESSAGES not found in the client bundle')
+  const start = marker.index + marker[0].length - 1
+  let depth = 0
+  let end = -1
+  for (let i = start; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1
+    else if (source[i] === '}') {
+      depth -= 1
+      if (depth === 0) { end = i; break }
+    }
+  }
+  if (end === -1) throw new Error('MESSAGES literal is not balanced')
+  return eval('(' + source.slice(start, end + 1) + ')')
+}
+
+/** Ключи, которых нет в `to` (рекурсивно по вложенным словарям, массивы не трогаем). */
+function missingKeys(from, to, prefix) {
+  const out = []
+  for (const key of Object.keys(from)) {
+    if (!(key in to)) { out.push(prefix + key); continue }
+    const a = from[key]
+    const b = to[key]
+    if (a && b && typeof a === 'object' && typeof b === 'object' && !Array.isArray(a)) {
+      out.push(...missingKeys(a, b, prefix + key + '.'))
+    }
+  }
+  return out
+}
+
 /** Minimal Cordis-like context. Options switch off optional services so both
     data paths (projections and the llm/stream fallback) can be exercised. */
 function makeHarness(options = {}) {
@@ -301,6 +335,14 @@ async function main() {
     ok('client has ' + marker, clientSource.includes(marker))
   }
   ok('client has no stale fallback bands', !clientSource.includes('temporary bands') && !clientSource.includes('полосы временные'))
+  /* Каждый язык обязан иметь те же ключи, что en: отсутствие ключа рисует
+     буквальное «undefined» вместо текста (баланс на не-DeepSeek провайдере). */
+  const messages = clientMessages(clientSource)
+  for (const lang of ['zh', 'ru']) {
+    const diff = missingKeys(messages.en, messages[lang], '')
+      .concat(missingKeys(messages[lang], messages.en, ''))
+    ok('i18n ' + lang + ' has the same keys as en', diff.length === 0, 'differs: ' + diff.join(', '))
+  }
 
   console.log('')
   console.log(passed + ' passed, ' + failed + ' failed')
