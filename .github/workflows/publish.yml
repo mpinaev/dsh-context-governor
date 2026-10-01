@@ -24,10 +24,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      # No registry-url on purpose. With it, setup-node writes an npmrc
+      # _authToken sentinel and npm authenticates with that token instead of the
+      # OIDC identity — trusted publishing then fails with a 404 even when the
+      # trusted publisher is configured on npmjs.com. Without it npm talks to the
+      # public registry by default and exchanges the OIDC token itself.
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
       # The tag names the release; a mismatch would publish one version under
       # another version's name, which is not recoverable.
