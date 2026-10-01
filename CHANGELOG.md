@@ -27,6 +27,10 @@
 - The READMEs state plainly that the step cost and the rates are in US dollars
   while the balance is shown in the source currency (USD or CNY) without
   conversion, so the two must not be compared directly.
+- At peak the balance and the time indicators are red. The host's `season.color`
+  is now red during peak (it was amber), and the client paints the chip balance,
+  the chip tariff marker, and the panel's tariff / countdown / Beijing-time /
+  balance rows with it, so the expensive hours read at a glance.
 
 ## 0.2.3
 

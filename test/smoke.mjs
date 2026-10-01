@@ -187,6 +187,11 @@ async function main() {
   eq('a workday-adjusted Saturday stays off-peak', mod.isPeak(bj(2026, 10, 10, 10, 0), nationalDay), false)
   eq('countdown skips the whole 7-day holiday',
     mod.nextFlip(octFirst, nationalDay).valueOf(), bj(2026, 10, 8, 9, 0).valueOf())
+  /* Пик — дорогие часы: цвет уходит в красный, вне пика остаётся зелёным.
+     Клиент красит им баланс и время в чипе и панели. */
+  eq('peak colour is red', mod.seasonAt(bj(2026, 10, 8, 9, 30), 2, new Set()).color, '#EF4444')
+  eq('off-peak colour is green', mod.seasonAt(bj(2026, 10, 8, 20, 0), 2, new Set()).color, '#57C07C')
+  eq('a holiday is green even in a weekday window', mod.seasonAt(octFirst, 2, nationalDay).color, '#57C07C')
 
   const h4 = makeHarness()
   const todayKey = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)

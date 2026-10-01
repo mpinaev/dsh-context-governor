@@ -180,7 +180,9 @@ The configured rates (freshRate, cacheReadRate, cacheWriteRate, outputRate) are
 off-peak; at peak they are multiplied by peakMultiplier (2 by default), so the
 step cost and the warnings follow the tariff of the moment. The countdown runs to
 the next real switch: boundaries inside a weekend are skipped, so after Friday
-18:00 it counts to Monday 09:00, not to Saturday.
+18:00 it counts to Monday 09:00, not to Saturday. At peak the tariff marker, the
+Beijing time and the balance are drawn in red, in both the chip and the panel, so
+the expensive hours are visible at a glance.
 
 **Chinese public holidays.** The official rule has an easy-to-miss caveat: peak is
 weekdays **excluding Chinese public holidays**, and on those holidays DeepSeek

@@ -171,8 +171,9 @@ function beijingClock(at) {
   return { weekdayIndex: beijing.getUTCDay(), clock: hh + ':' + mm }
 }
 
-/** Состояние тарифа на момент времени: пик/off-peak и обратный отсчёт. */
-function seasonAt(at, peakMultiplier, holidays) {
+/** Состояние тарифа на момент времени: пик/off-peak и обратный отсчёт.
+    Экспортируется для тестов — цвет пика проверяется без запуска сервера. */
+export function seasonAt(at, peakMultiplier, holidays) {
   const holiday = !!holidays && holidays.has(beijingDateKey(at))
   const peak = isPeak(at, holidays)
   const flip = nextFlip(at, holidays)
@@ -187,7 +188,9 @@ function seasonAt(at, peakMultiplier, holidays) {
     countdown: countdown,
     multiplier: multiplier,
     beijing: beijing,
-    color: peak ? '#D9A24A' : '#57C07C',
+    /* Пик — дорогие часы: клиент красит этим цветом баланс и время (красный),
+       вне пика — спокойный зелёный. */
+    color: peak ? '#EF4444' : '#57C07C',
   }
 }
 

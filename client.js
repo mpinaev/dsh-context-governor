@@ -437,6 +437,10 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     var kidsNote = kids.length > 0 ? ' · ' + M.kids + ' ' + kids.length : ''
     var season = data && data.season ? data.season : null
     var bal = data && data.balance ? data.balance : null
+    /* Пик — дорогие часы: и в чипе, и в панели баланс и время уходят в красный
+       (цвет приходит от host вместе с сезоном). */
+    var peak = !!(season && season.peak)
+    var peakColor = peak ? season.color : null
     /* Цена — только если host удалось посчитать (DeepSeek). Иначе «цена неизвестна». */
     var knownPrice = cur && cur.costUsd != null
     var costText = knownPrice ? ('$' + fmtUsd(cur.costUsd)) : M.noPrice
@@ -471,7 +475,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       },
     }, h('span', { style: { fontSize: '10px' } }, band >= 2 ? '⚠' : '◐'),
       h('span', null, label),
-      balText ? h('span', { title: balanceTipText(bal, M), style: { color: BAND_COLOR[0] } }, ' · ' + balText) : null,
+      balText ? h('span', { title: balanceTipText(bal, M), style: { color: peakColor || BAND_COLOR[0] } }, ' · ' + balText) : null,
       seasonText ? h('span', { title: seasonTitleText(season, M, lang), style: { color: season.color, fontWeight: 600 } }, ' · ' + seasonText) : null)
 
     var panel = null
@@ -492,11 +496,11 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
             [M.rows.threshold, cfgInfo.compactThreshold ? cfgInfo.compactThreshold : M.dash],
             [M.rows.reserve, cfgInfo.reservedTokens ? cfgInfo.reservedTokens : M.dash],
             [M.rows.band, M.band[band] + ' (' + band + ')'],
-            [M.rows.tariff, seasonLabelText(season, M)],
-            [M.rows.tariffFlip, season ? season.countdown + ' → ' + (season.peak ? M.season.off : M.season.peak) : M.dash],
-            [M.rows.beijing, season ? weekdayName(season, M, lang) + ' ' + season.beijing.clock : M.dash],
+            [M.rows.tariff, seasonLabelText(season, M), peakColor],
+            [M.rows.tariffFlip, season ? season.countdown + ' → ' + (season.peak ? M.season.off : M.season.peak) : M.dash, peakColor],
+            [M.rows.beijing, season ? weekdayName(season, M, lang) + ' ' + season.beijing.clock : M.dash, peakColor],
             [M.rows.rates, data.rates ? M.ratesFmt(data.rates) : M.noPrice],
-            [M.rows.balance, balanceStateText(bal, M)],
+            [M.rows.balance, balanceStateText(bal, M), bal && bal.ok ? peakColor : null],
           ]
         : [[M.tipContext, M.noData]]
       /* Календарь праздников не доехал (нет сети / год ещё не опубликован):
@@ -533,7 +537,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         rows.map(function (row) {
           return h('div', { key: row[0], style: { display: 'flex', justifyContent: 'space-between', gap: '16px' } },
             h('span', { style: { color: BAND_COLOR[0] } }, row[0]),
-            h('span', null, String(row[1])))
+            h('span', row[2] ? { style: { color: row[2] } } : null, String(row[1])))
         }),
         kids.length > 0
           ? h('div', { style: { marginTop: '8px' } },
