@@ -136,19 +136,26 @@ threshold = min(thresholdRatio * window, window - reserve - headroom)
 **钱。** DSH 和提供方都不在任何地方以美元报告 token 费用，因此插件自带费率表
 （对它不认识的提供方默认关闭）。所以胶囊/余额的逻辑是：
 
-- 价格**只在插件有该提供方费率时**显示——目前就是 DeepSeek
-  （`deepseek-official`，以及以 `deepseek` 开头的 id）。对任何其他提供方（cline、
+- 价格**只在插件知道该提供方费率时**显示——默认是 DeepSeek
+  （`deepseek-official`，以及以 `deepseek` 开头的 id），再加上在 `providerRates`
+  里声明或在 `pricedProviders` 里列出的提供方。对任何其他提供方（cline、
   clinebot、OpenRouter、pi-ai……）与价格相关的都不计算、不显示：胶囊里去掉费用那
   一段，面板里去掉“单步费用”“相对基准”和“费率”三行——既没有编造的数字，也没有
   “价格未知”的占位；
-- 高峰/低谷标记（⚡/🌙）始终显示，因为它只是读出时钟，不是某个提供方的费用；只有
-  在已知费率时它才带上 `×N` 倍数。
+- **费率按提供方**：`providerRates.<id>` 覆盖默认的 `freshRate` /
+  `cacheReadRate` / `cacheWriteRate` / `outputRate`，所以第二个提供方可以有自己
+  的数字（以及自己的 `peakMultiplier`）；
+- **季节性费率也按提供方**：高峰/低谷、中国法定节假日与 `×N` 倍数都是 DeepSeek 的
+  时间表，所以标记（⚡/🌙）和费率各行只对**季节性**提供方显示——默认是 id 以
+  `deepseek` 开头者。其他提供方是平价费率：既没有标记，也没有关于高峰和北京时间的
+  行；若某个外部提供方确实遵循 DeepSeek 的时间表，就在它的 `providerRates` 记录里
+  写 `seasonal: true`。
 
 ## 信号
 
 - 当会话进入某个档位、出现冷预填、或单步费用偏高时，写入一条服务端日志；
 - 会话头部的客户端胶囊，按档位着色，并带详情面板；
-- 胶囊上：余额和费率标记（高峰 / 低谷 + 倒计时）。
+- 胶囊上：余额，以及遵循 DeepSeek 时间表的提供方的费率标记（高峰 / 低谷 + 倒计时）。
 
 ## 高峰/低谷费率与余额
 
@@ -157,8 +164,8 @@ threshold = min(thresholdRatio * window, window - reserve - headroom)
 不参与判定，只用于显示。配置中的费率（freshRate、cacheReadRate、cacheWriteRate、
 outputRate）是低谷价；高峰时乘以 peakMultiplier（默认 2），因此单步费用与告警都
 跟随当下的实际费率。倒计时指向下一次真实切换：周末内部的边界会被跳过，所以周五
-18:00 之后是倒数到周一 09:00，而不是周六。高峰时段，费率标记、北京时间与余额在
-胶囊和面板中都显示为红色，昂贵的时段一眼可见。
+18:00 之后是倒数到周一 09:00，而不是周六。对遵循该时间表的提供方，高峰时段费率
+标记、北京时间与余额在胶囊和面板中都显示为红色，昂贵的时段一眼可见。
 
 **中国法定节假日。** 官方规则有一个容易漏掉的附加说明：高峰是周一至周五，**不含
 中国法定节假日**，而在这些节假日里 DeepSeek 全天保持低谷。插件从受维护的来源获取
@@ -259,13 +266,15 @@ band i                = bandRatios[i] * compaction threshold
 告警。
 
 在 `~/.dsh/profiles/web/cordis.patch.yml` 的 `context-governor` 块里只能调
-`bandRatios`、`headroomTokens`、`thresholdRatio`，费率（`freshRate`、
-`cacheReadRate`、`cacheWriteRate`、`outputRate`、`peakMultiplier`）与信号阈值
-（`anomalyDelta`、`anomalyCostUsd`、`cacheHitFloorPct`）；节假日日历——`holidays`、
-`holidayFetch`、`holidayUrl`、`holidayCacheDir`、`holidayRetryMs`、`holidayTimeoutMs`；
-余额——`balanceEnabled`、`useAccountBalance`、`balanceProviders`、`balanceTtlMs`、
-`balanceTimeoutMs`。`windowTokens` 和 `reservedTokens` 可以强制指定，但默认是 `0`，
-意思是“问 harness”；把它们写死会失去自适应性。
+`bandRatios`、`headroomTokens`、`thresholdRatio`，默认费率（`freshRate`、
+`cacheReadRate`、`cacheWriteRate`、`outputRate`、`peakMultiplier`），按提供方的
+覆盖（`pricedProviders`、`providerRates`——费率、`seasonal`、`peakMultiplier`）与
+信号阈值（`anomalyDelta`、`anomalyCostUsd`、`cacheHitFloorPct`）；节假日日历——
+`holidays`、`holidayFetch`、`holidayUrl`、`holidayCacheDir`、`holidayRetryMs`、
+`holidayTimeoutMs`；余额——`balanceEnabled`、`useAccountBalance`、
+`balanceProviders`、`balanceTtlMs`、`balanceTimeoutMs`。`windowTokens` 和
+`reservedTokens` 可以强制指定，但默认是 `0`，意思是“问 harness”；把它们写死会
+失去自适应性。
 
 ## 说明
 

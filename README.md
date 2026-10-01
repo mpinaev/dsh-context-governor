@@ -155,15 +155,21 @@ a hit.
 the plugin keeps its own rates table (off by default for providers it does not
 know). The chip/balance logic is therefore:
 
-- the price is shown **only where the plugin has rates for the provider** — today
-  that is DeepSeek (`deepseek-official`, ids starting with `deepseek`). For any
+- the price is shown **only where the plugin has rates for the provider** — by
+  default DeepSeek (`deepseek-official`, ids starting with `deepseek`), plus any
+  provider declared in `providerRates` or listed in `pricedProviders`. For any
   other provider (cline, clinebot, OpenRouter, pi-ai, …) nothing price-related is
   computed or displayed: the chip drops the cost segment, and the panel drops the
   step-cost, relative-to-base and rates rows — no invented dollar figure and no
   "price unavailable" placeholder either;
-- the peak/off-peak time marker (⚡/🌙) is shown always, because it is just a clock
-  reading, not a per-provider cost; its `×N` multiplier appears only where the
-  rates are known.
+- rates are **per provider**: `providerRates.<id>` overrides the default
+  `freshRate` / `cacheReadRate` / `cacheWriteRate` / `outputRate`, so a second
+  provider can carry its own numbers (and its own `peakMultiplier`);
+- the peak/off-peak tariff (⚡/🌙, the `×N` multiplier, Chinese holidays) is
+  **DeepSeek's**, so it is shown only for a *seasonal* provider: by default an id
+  starting with `deepseek`. A foreign provider has a flat rate; declare
+  `seasonal: true` in its `providerRates` entry if it really follows DeepSeek's
+  schedule. A flat provider gets neither the time marker nor the tariff rows.
 
 
 ## Signals
@@ -171,7 +177,8 @@ know). The chip/balance logic is therefore:
 - a server log entry when a session enters a band, on a cold prefill and on an
   expensive step;
 - a client chip in the session header, coloured by band, with a details panel;
-- on the chip: balance and the tariff marker (peak / off-peak with countdown).
+- on the chip: the balance and, for a provider that follows DeepSeek's schedule,
+  the tariff marker (peak / off-peak with countdown).
 
 ## Peak/off-peak tariff and balance
 
@@ -182,9 +189,10 @@ The configured rates (freshRate, cacheReadRate, cacheWriteRate, outputRate) are
 off-peak; at peak they are multiplied by peakMultiplier (2 by default), so the
 step cost and the warnings follow the tariff of the moment. The countdown runs to
 the next real switch: boundaries inside a weekend are skipped, so after Friday
-18:00 it counts to Monday 09:00, not to Saturday. At peak the tariff marker, the
-Beijing time and the balance are drawn in red, in both the chip and the panel, so
-the expensive hours are visible at a glance.
+18:00 it counts to Monday 09:00, not to Saturday. On a provider with that
+schedule, at peak the tariff marker, the Beijing time and the balance are drawn in
+red, in both the chip and the panel, so the expensive hours are visible at a
+glance.
 
 **Chinese public holidays.** The official rule has an easy-to-miss caveat: peak is
 weekdays **excluding Chinese public holidays**, and on those holidays DeepSeek
@@ -311,11 +319,12 @@ window has not been resolved yet, the bands are not invented (there are none) an
 the panel shows a model-window-unknown warning.
 
 In the `context-governor` block of `~/.dsh/profiles/web/cordis.patch.yml` you
-can tune only `bandRatios`, `headroomTokens`, `thresholdRatio`, the rates
+can tune only `bandRatios`, `headroomTokens`, `thresholdRatio`, the default rates
 (`freshRate`, `cacheReadRate`, `cacheWriteRate`, `outputRate`,
-`peakMultiplier`) and the signal thresholds (`anomalyDelta`,
-`anomalyCostUsd`, `cacheHitFloorPct`); for the holiday calendar — `holidays`,
-`holidayFetch`, `holidayUrl`, `holidayCacheDir`, `holidayRetryMs`,
+`peakMultiplier`), the per-provider overrides (`pricedProviders`,
+`providerRates` — rates, `seasonal`, `peakMultiplier`) and the signal thresholds
+(`anomalyDelta`, `anomalyCostUsd`, `cacheHitFloorPct`); for the holiday calendar —
+`holidays`, `holidayFetch`, `holidayUrl`, `holidayCacheDir`, `holidayRetryMs`,
 `holidayTimeoutMs`; for the balance — `balanceEnabled`,
 `useAccountBalance`, `balanceProviders`, `balanceTtlMs`,
 `balanceTimeoutMs`. `windowTokens` and `reservedTokens` can be forced, but

@@ -506,9 +506,11 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
             [M.rows.threshold, cfgInfo.compactThreshold ? cfgInfo.compactThreshold : M.dash],
             [M.rows.reserve, cfgInfo.reservedTokens ? cfgInfo.reservedTokens : M.dash],
             [M.rows.band, M.band[band] + ' (' + band + ')'],
-            [M.rows.tariff, seasonLabelText(season, M, showPrice), peakColor],
-            [M.rows.tariffFlip, season ? season.countdown + ' → ' + (season.peak ? M.season.off : M.season.peak) : M.dash, peakColor],
-            [M.rows.beijing, season ? weekdayName(season, M, lang) + ' ' + season.beijing.clock : M.dash, peakColor],
+            /* Тариф DeepSeek показываем только там, где он есть: у чужого
+               провайдера тариф плоский, и строк про пик/Пекин быть не должно. */
+            season ? [M.rows.tariff, seasonLabelText(season, M, showPrice), peakColor] : null,
+            season ? [M.rows.tariffFlip, season.countdown + ' → ' + (season.peak ? M.season.off : M.season.peak), peakColor] : null,
+            season ? [M.rows.beijing, weekdayName(season, M, lang) + ' ' + season.beijing.clock, peakColor] : null,
             showPrice ? [M.rows.rates, data.rates ? M.ratesFmt(data.rates) : M.noPrice] : null,
             [M.rows.balance, balanceStateText(bal, M), bal && bal.ok ? peakColor : null],
           ].filter(Boolean)

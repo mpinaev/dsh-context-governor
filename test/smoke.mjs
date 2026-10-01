@@ -130,7 +130,7 @@ function statusPayload(overrides = {}) {
     current: { session: 's', prompt: 1050, fresh: 100, cacheRead: 900, cacheWrite: 50, output: 20, freshDelta: 100, cacheHitPct: 86, cacheHitText: '86', relative: null, costUsd: null, band: 0, ts: 1 },
     children: [],
     childrenPromptSum: 0,
-    season: { peak: true, holiday: false, countdown: '2h', multiplier: 2, beijing: { weekdayIndex: 4, clock: '10:00' }, color: '#EF4444', holidayKnown: true },
+    season: null,
     rates: null,
     warnings: [],
     balance: { ok: false, state: 'other-provider', provider: 'cline' },
@@ -254,10 +254,10 @@ async function main() {
   eq('cache-hit counts reads only', c.current.cacheHitPct, 86)
   eq('cache-hit text for a plain ratio', c.current.cacheHitText, '86')
   /* DSH не отдаёт токен-цены ни моделям, ни провайдерам: для Cline плагин не
-     выдумывает deepseek-тариф, а пишет, что цена неизвестна. */
+     выдумывает deepseek-тариф и не показывает ни цену, ни сезон DeepSeek. */
   eq('cline price is unknown to plugin', c.current.costUsd, null)
   eq('cline relative is unknown', c.current.relative, null)
-  ok('peak/off-peak shown even for cline', c.season !== null)
+  eq('no DeepSeek tariff on cline', c.season, null)
   eq('cline rates hidden', c.rates, null)
   eq('cline has no known rates', c.config.priced, false)
   eq('balance hidden off DeepSeek', c.balance.state, 'other-provider')
@@ -269,8 +269,57 @@ async function main() {
   eq('deepseek threshold', d.config.compactThreshold, 678464)
   ok('deepseek balance is attempted', d.balance.state === 'no-credential', JSON.stringify(d.balance))
   eq('deepseek rates are known to the client', d.config.priced, true)
+  ok('deepseek keeps the seasonal tariff', d.season !== null && typeof d.season.peak === 'boolean', JSON.stringify(d.season))
   /* Календаря нет (сеть выключена) — клиент должен знать, что тариф приблизительный. */
   eq('missing holiday calendar is reported', d.season.holidayKnown, false)
+
+  console.log('per-provider rates and a flat tariff')
+  /* Чужой провайдер со своими ставками: цену считаем по НИМ, но сезона DeepSeek
+     у него нет — пик его ставки не удваивает и Пекин ему не указ. */
+  const hFlat = makeHarness()
+  mod.apply(hFlat.ctx, Object.assign({}, RATES, OFFLINE, {
+    pricedProviders: [],
+    providerRates: { cline: { freshRate: 0.5, cacheReadRate: 0.05, cacheWriteRate: 0.5, outputRate: 1.5, seasonal: false } },
+    balanceEnabled: false,
+  }))
+  feedSession(hFlat, { header: { id: 'sess-flat' } }, {
+    provider: 'cline',
+    model: 'some/model',
+    maxTokens: 8192,
+    window: 200000,
+    buckets: { uncachedInputTokens: 100, cacheReadTokens: 900, cacheWriteTokens: 50, outputTokens: 20 },
+  })
+  await tick()
+  const flat = await statusOf(hFlat, 'sess-flat')
+  eq('a provider with its own rates is priced', flat.config.priced, true)
+  eq('the provider rates are used',
+    flat.rates.fresh + '/' + flat.rates.cacheRead + '/' + flat.rates.cacheWrite + '/' + flat.rates.output, '0.5/0.05/0.5/1.5')
+  eq('a flat provider has no DeepSeek season', flat.season, null)
+  /* (100*0.5 + 900*0.05 + 50*0.5 + 20*1.5) / 1e6 = 0.00015 */
+  eq('the step cost follows the provider rates', flat.current.costUsd, 0.00015)
+  /* (100 + 900*(0.05/0.5) + 50*(0.5/0.5)) / 100000 = 0.0024 → 0.002 */
+  eq('relative uses the provider rates', flat.current.relative, 0.002)
+
+  console.log('a foreign provider can opt into the DeepSeek season')
+  const hSeas = makeHarness()
+  mod.apply(hSeas.ctx, Object.assign({}, RATES, OFFLINE, {
+    pricedProviders: ['cline'],
+    providerRates: { cline: { seasonal: true } },
+    balanceEnabled: false,
+  }))
+  feedSession(hSeas, { header: { id: 'sess-seas' } }, {
+    provider: 'cline',
+    model: 'some/model',
+    maxTokens: 8192,
+    window: 200000,
+    buckets: { uncachedInputTokens: 100, cacheReadTokens: 900, cacheWriteTokens: 50, outputTokens: 20 },
+  })
+  await tick()
+  const seas = await statusOf(hSeas, 'sess-seas')
+  ok('seasonal: true brings the tariff back', seas.season !== null && typeof seas.season.peak === 'boolean', JSON.stringify(seas.season))
+  /* Базовые ставки общие; сезон применяется по факту момента, поэтому сверяем
+     с ожидаемым множителем, а не с фиксированным числом. */
+  eq('the default rates apply there', seas.rates.fresh, 0.15 * (seas.season.peak ? 2 : 1))
 
   console.log('tariff calendar: Chinese public holidays')
   /* DeepSeek: пик — будни 09:00–12:00 и 14:00–18:00 по Пекину, НО в гос.
@@ -412,28 +461,44 @@ async function main() {
 
   /* Цена — только там, где плагин знает ставки: на не-DeepSeek провайдере её нет
      ни в чипе, ни в панели, ни в подсказке, и множитель тарифа тоже не показываем. */
-  console.log('client render: price only where the rates are known')
-  const clinePayload = statusPayload()
+  console.log('client render: price and season only where they belong')
+  /* season null — так host отвечает и на не-DeepSeek, и на плоский тариф. */
+  const unpricedPayload = statusPayload()
+  const flatPayload = statusPayload({
+    config: { base: 100000, compactThreshold: 126272, windowTokens: 200000, reservedTokens: 8192, route: 'other/model', windowSource: 'catalog', provider: 'other', priced: true },
+    current: { session: 's', prompt: 1050, fresh: 100, cacheRead: 900, cacheWrite: 50, output: 20, freshDelta: 100, cacheHitPct: 86, cacheHitText: '86', relative: 0.002, costUsd: 0.00015, band: 0, ts: 1 },
+    rates: { fresh: 0.5, cacheRead: 0.05, cacheWrite: 0.5, output: 1.5 },
+  })
   const deepseekPayload = statusPayload({
     config: { base: 100000, compactThreshold: 678464, windowTokens: 1000000, reservedTokens: 256000, route: 'deepseek-official/deepseek-flash', windowSource: 'catalog', provider: 'deepseek-official', priced: true },
     current: { session: 's', prompt: 1050, fresh: 100, cacheRead: 900, cacheWrite: 50, output: 20, freshDelta: 100, cacheHitPct: 86, cacheHitText: '86', relative: 0.015, costUsd: 0.0013, band: 0, ts: 1 },
     rates: { fresh: 0.3, cacheRead: 0.006, cacheWrite: 0.3, output: 1.2 },
+    season: { peak: true, holiday: false, countdown: '2h', multiplier: 2, beijing: { weekdayIndex: 4, clock: '10:00' }, color: '#EF4444', holidayKnown: true },
     balance: { ok: true, state: 'ok', source: 'api-key', currency: 'USD', total: 8.95, granted: 0, toppedUp: 8.95, isAvailable: true },
   })
   for (const lang of ['en', 'ru', 'zh']) {
     const M = messages[lang]
-    const withoutRates = clientRender(clientSource, clinePayload, lang)
+    /* Строки про тариф ловим по уникальным подписям: у zh «费率» — часть
+       подписи строки ставок, поэтому по ней одну судить нельзя. */
+    const seasonRows = (text) => text.includes(M.rows.tariffFlip) || text.includes(M.rows.beijing)
+    const priceRows = (text) => text.includes(M.rows.cost) && text.includes(M.rows.rates)
+
+    const unpriced = clientRender(clientSource, unpricedPayload, lang)
     ok('no price on a provider without rates (' + lang + ')',
-      !withoutRates.includes(M.noPrice) && !withoutRates.includes(M.rows.cost) &&
-        !withoutRates.includes(M.rows.relative) && !withoutRates.includes(M.rows.rates),
-      withoutRates)
-    ok('no tariff multiplier without rates (' + lang + ')', !withoutRates.includes('×2'), withoutRates)
-    ok('no undefined text off DeepSeek (' + lang + ')', !withoutRates.includes('undefined'), withoutRates)
-    const withRates = clientRender(clientSource, deepseekPayload, lang)
-    ok('the price is shown where rates are known (' + lang + ')',
-      withRates.includes('$0.0013') && withRates.includes(M.rows.cost) &&
-        withRates.includes(M.rows.rates) && withRates.includes('×2'),
-      withRates)
+      !unpriced.includes(M.noPrice) && !priceRows(unpriced) && !seasonRows(unpriced) && !unpriced.includes('×2'),
+      unpriced)
+    ok('no undefined text off DeepSeek (' + lang + ')', !unpriced.includes('undefined'), unpriced)
+
+    /* Плоский чужой провайдер: цена есть (свои ставки), сезона DeepSeek нет. */
+    const flat = clientRender(clientSource, flatPayload, lang)
+    ok('a flat provider shows its price (' + lang + ')', flat.includes('$0.0001') && priceRows(flat), flat)
+    ok('a flat provider shows no DeepSeek season (' + lang + ')',
+      !seasonRows(flat) && !flat.includes('×2'), flat)
+
+    const seasonal = clientRender(clientSource, deepseekPayload, lang)
+    ok('a seasonal provider shows the tariff (' + lang + ')',
+      priceRows(seasonal) && seasonRows(seasonal) && seasonal.includes('×2') && seasonal.includes('$0.0013'),
+      seasonal)
   }
 
   console.log('')

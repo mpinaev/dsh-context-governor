@@ -56,10 +56,12 @@ const DEFAULTS = {
   /* Провайдеры, для которых плагин знает цены (своя таблица ставок ниже).
      Цены выплачиваются за токены провайдером, а DSH не отдаёт их — поэтому
      для чужих провайдеров (Cline, OpenRouter, pi-ai, …) стоимость шага не
-     высчитывается, а плагин пишет «нет данных». */
+     высчитывается, а плагин её вовсе не показывает. */
   pricedProviders: ['deepseek-official'],
   /* Цены deepseek-flash off-peak, $ за 1M токенов. Кэш-чтение в 50x дешевле
-     свежего входа — именно поэтому абсолютный prompt не равен расходу. */
+     свежего входа — именно поэтому абсолютный prompt не равен расходу.
+     Это ставки ПО УМОЛЧАНИЮ: провайдер без своей записи в providerRates
+     берёт их. */
   freshRate: 0.15,
   cacheReadRate: 0.003,
   /* Запись в кэш: у DeepSeek тарифицируется как обычный вход, поэтому по
@@ -67,6 +69,16 @@ const DEFAULTS = {
      опубликует точную цену, правится конфигом, без правки кода. */
   cacheWriteRate: 0.15,
   outputRate: 0.6,
+  /* Ставки и режим тарифа ПО ПРОВАЙДЕРУ: ключ — id провайдера (как в маршруте),
+     значение — переопределение над ставками выше и над общим сезоном:
+       freshRate / cacheReadRate / cacheWriteRate / outputRate — $ за 1M;
+       seasonal: true/false — живёт ли провайдер по расписанию DeepSeek
+         (пик будней + праздники Китая). По умолчанию true у id на `deepseek`
+         и false у остальных: у чужого провайдера сезонного тарифа нет, и
+         множить его ставки на пик DeepSeek нельзя;
+       peakMultiplier — свой множитель пика (если seasonal).
+     Провайдер со своими ставками считается priced и без pricedProviders. */
+  providerRates: {},
   /* Аномалия — по свежим токенам и по стоимости шага. */
   anomalyDelta: 8000,
   anomalyCostUsd: 0.02,
@@ -194,24 +206,79 @@ export function seasonAt(at, peakMultiplier, holidays) {
   }
 }
 
+/** Запись провайдера из providerRates (ставки и режим тарифа) или null. */
+function providerProfile(cfg, provider) {
+  const map = cfg.providerRates && typeof cfg.providerRates === 'object' ? cfg.providerRates : {}
+  const key = String(provider || '')
+  if (!key) return null
+  const entry = Object.prototype.hasOwnProperty.call(map, key) ? map[key] : null
+  return entry && typeof entry === 'object' ? entry : null
+}
+
+/** Есть ли у профиля хоть одна своя ставка: запись без ставок — только про режим
+    тарифа (например, чужой провайдер на общих числах, но без сезона DeepSeek). */
+function hasExplicitRates(profile) {
+  if (!profile) return false
+  return ['freshRate', 'cacheReadRate', 'cacheWriteRate', 'outputRate'].some(function (key) {
+    return typeof profile[key] === 'number' && Number.isFinite(profile[key])
+  })
+}
+
 /** Тот ли провайдер, для которого плагин знает цены. DSH не отдаёт токен-
     цены ни в модели, ни в проекции, ни в сервисе — поэтому плагин вынужден
-    поддерживать таблицу ставок себе. Для чужих провайдеров (Cline, OpenRouter,
-    pi-ai, …) цены неизвестны: считать стоимость нельзя, а иначе получится
-    выдумка. id начинается с `deepseek` — тоже наш (deepseek-official). */
+    поддерживать таблицу ставок себе. Знаем ставки у: списка pricedProviders,
+    любого id на `deepseek` и любого провайдера со своей записью в providerRates. */
 function isPricedProvider(cfg, provider) {
   const list = Array.isArray(cfg.pricedProviders) ? cfg.pricedProviders : []
   const p = String(provider || '')
-  return list.indexOf(p) >= 0 || p.split('/')[0] === 'deepseek'
+  if (list.indexOf(p) >= 0 || p.split('/')[0] === 'deepseek') return true
+  return hasExplicitRates(providerProfile(cfg, p))
 }
 
-/** Ставки $/1M на момент: off-peak — из конфига, пик — умноженный на сезон. */
-function ratesAt(cfg, season) {
+/** Живёт ли провайдер по сезонному тарифу DeepSeek (пик будней + праздники
+    Китая). По умолчанию — только id на `deepseek`: множить ставки чужого
+    провайдера на пик DeepSeek нельзя, у него своё расписание (или его нет).
+    Чужой провайдер, который правда следует расписанию DeepSeek, ставит
+    seasonal: true в providerRates. */
+function isSeasonalProvider(cfg, provider) {
+  const profile = providerProfile(cfg, provider)
+  if (profile && typeof profile.seasonal === 'boolean') return profile.seasonal
+  return String(provider || '').indexOf('deepseek') === 0
+}
+
+/** Свой множитель пика у провайдера или общий. */
+function peakMultiplierFor(cfg, provider) {
+  const profile = providerProfile(cfg, provider)
+  if (profile && typeof profile.peakMultiplier === 'number' && profile.peakMultiplier > 0) return profile.peakMultiplier
+  return cfg.peakMultiplier
+}
+
+/** Ставки $/1M провайдера БЕЗ сезона: свои поля из providerRates, остальное —
+    общие. Нужны и для цены (умножаются на сезон), и для xN относительно базы. */
+function baseRatesFor(cfg, provider) {
+  const profile = providerProfile(cfg, provider) || {}
+  const pick = function (key) {
+    const value = profile[key]
+    return typeof value === 'number' && Number.isFinite(value) ? value : cfg[key]
+  }
   return {
-    fresh: cfg.freshRate * season.multiplier,
-    cacheRead: cfg.cacheReadRate * season.multiplier,
-    cacheWrite: cfg.cacheWriteRate * season.multiplier,
-    output: cfg.outputRate * season.multiplier,
+    freshRate: pick('freshRate'),
+    cacheReadRate: pick('cacheReadRate'),
+    cacheWriteRate: pick('cacheWriteRate'),
+    outputRate: pick('outputRate'),
+  }
+}
+
+/** Ставки $/1M на момент: базовые ставки провайдера, умноженные на сезон
+    (multiplier = 1 у плоского тарифа). */
+function ratesAt(cfg, provider, multiplier) {
+  const base = baseRatesFor(cfg, provider)
+  const factor = multiplier > 0 ? multiplier : 1
+  return {
+    fresh: base.freshRate * factor,
+    cacheRead: base.cacheReadRate * factor,
+    cacheWrite: base.cacheWriteRate * factor,
+    output: base.outputRate * factor,
   }
 }
 
@@ -789,8 +856,13 @@ export function apply(ctx, config = {}) {
     const provider = cap.route ? cap.route.split('/')[0] : ''
     const priced = isPricedProvider(cfg, provider)
     const at = new Date()
-    const season = priced ? seasonAt(at, cfg.peakMultiplier, holidayDates) : null
-    const rate = priced ? ratesAt(cfg, season) : null
+    /* Сезон DeepSeek применяется только к своим сезонным провайдерам: у чужого
+       тариф плоский, и множить его ставки на пик нельзя. */
+    const season = priced && isSeasonalProvider(cfg, provider)
+      ? seasonAt(at, peakMultiplierFor(cfg, provider), holidayDates)
+      : null
+    const base = priced ? baseRatesFor(cfg, provider) : null
+    const rate = priced ? ratesAt(cfg, provider, season ? season.multiplier : 1) : null
     /* Cache-hit — доля prompt, отданная из кэша на чтение; запись в кэш хитом
        не является. Считаем по ИТОГАМ сессии, как чип harness («Cache hit»), —
        иначе последний шаг почти всегда «100%» и цифра расходится с harness.
@@ -810,7 +882,7 @@ export function apply(ctx, config = {}) {
       freshDelta: prev ? input - prev.fresh : input,
       cacheHitPct: cacheHitWholePercent(sum.cacheRead || 0, sumPrompt),
       cacheHitText: formatCacheHitPercent(sum.cacheRead || 0, sumPrompt) || '0',
-      relative: priced ? Math.round(((input + cacheRead * (cfg.cacheReadRate / cfg.freshRate) + cacheWrite * (cfg.cacheWriteRate / cfg.freshRate)) / cfg.base) * 1000) / 1000 : null,
+      relative: priced ? Math.round(((input + cacheRead * (base.cacheReadRate / base.freshRate) + cacheWrite * (base.cacheWriteRate / base.freshRate)) / cfg.base) * 1000) / 1000 : null,
       costUsd: priced ? Math.round(costUsd * 1000000) / 1000000 : null,
       band: bandOf(prompt, cap.bands),
       ts: Date.now(),
@@ -984,14 +1056,18 @@ export function apply(ctx, config = {}) {
       } catch (error) { /* останется пустым — баланс скрыт */ }
     }
     /* DSH не отдаёт токен-цены ни моделям, ни провайдерам и не знает тарифов.
-       Поэтому: season (пик/off-peak по расписанию DeepSeek) — всегда показываем
-       (это просто индикатор времени), rates и cost считаются ТОЛЬКО для провайдеров
-       с известными ставками (DeepSeek); для чужих — null, и окно пишет «нет данных». */
+       Поэтому: rates и cost считаются ТОЛЬКО для провайдеров с известными
+       ставками; season (пик/off-peak + праздники по расписанию DeepSeek) — только
+       для сезонных провайдеров, у остальных тариф плоский и показывать нечего. */
     const priced = isPricedProvider(cfg, activeProvider)
-    ensureHolidays(new Date(now))
-    const season = seasonAt(new Date(now), cfg.peakMultiplier, holidayDates)
-    season.holidayKnown = holidayKnown(new Date(now))
-    const rates = priced ? ratesAt(cfg, season) : null
+    const seasonal = isSeasonalProvider(cfg, activeProvider)
+    let season = null
+    if (seasonal) {
+      ensureHolidays(new Date(now))
+      season = seasonAt(new Date(now), peakMultiplierFor(cfg, activeProvider), holidayDates)
+      season.holidayKnown = holidayKnown(new Date(now))
+    }
+    const rates = priced ? ratesAt(cfg, activeProvider, season ? season.multiplier : 1) : null
     if (current) {
       /* Сигналы траты — не размер контекста, а свежие токены и провал кэша:
          при 99% cache-hit абсолютный prompt стоит копейки (кэш в 50x дешевле). */
@@ -1301,8 +1377,25 @@ export function apply(ctx, config = {}) {
     bootstrapDefaultRoute()
   }
 
-  ensureHolidays(new Date())
-  const bootSeason = seasonAt(new Date(), cfg.peakMultiplier, holidayDates)
-  log('ready: тариф ' + (bootSeason.peak ? 'пик' : bootSeason.holiday ? 'off-peak (праздник Китая)' : 'off-peak') + ' (×' + bootSeason.multiplier + '), смена через ' + bootSeason.countdown +
+  /* Тариф в логе — по провайдеру модели по умолчанию: сезон DeepSeek есть только
+     у своих, у чужого он плоский, и притворяться иначе нельзя. */
+  let bootProvider = ''
+  try {
+    const svc = typeof ctx.get === 'function' ? ctx.get('agentDefaultModel') : undefined
+    if (svc && typeof svc.currentSelection === 'function') {
+      const pick = svc.currentSelection()
+      if (pick && pick.provider) bootProvider = String(pick.provider)
+    }
+  } catch (error) { bootProvider = '' }
+  let bootTariff
+  if (isSeasonalProvider(cfg, bootProvider)) {
+    ensureHolidays(new Date())
+    const bootSeason = seasonAt(new Date(), peakMultiplierFor(cfg, bootProvider), holidayDates)
+    bootTariff = (bootSeason.peak ? 'пик' : bootSeason.holiday ? 'off-peak (праздник Китая)' : 'off-peak') +
+      ' (×' + bootSeason.multiplier + '), смена через ' + bootSeason.countdown
+  } else {
+    bootTariff = isPricedProvider(cfg, bootProvider) ? 'плоский, без сезона DeepSeek' : 'нет (не DeepSeek)'
+  }
+  log('ready: тариф ' + bootTariff +
     '; баланс ' + (cfg.balanceEnabled ? 'включён (' + (cfg.useAccountBalance ? 'аккаунт, иначе API-ключ' : 'только API-ключ') + ', кэш ' + cfg.balanceTtlMs + ' мс)' : 'выключен'))
 }

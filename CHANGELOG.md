@@ -44,6 +44,16 @@
   the chip loses its cost segment, and the panel loses the step-cost,
   relative-to-base and rates rows. The peak marker stays (it is a clock reading),
   but its `×N` multiplier appears only where rates are known.
+- Rates and the seasonal tariff are now per provider. `providerRates.<id>`
+  overrides the default `freshRate` / `cacheReadRate` / `cacheWriteRate` /
+  `outputRate` (and `peakMultiplier`), so a second provider can carry its own
+  numbers, and a provider with explicit rates is priced even if it is not in
+  `pricedProviders`. The DeepSeek season — peak/off-peak, the `×N` multiplier and
+  the Chinese holidays — now applies only to a *seasonal* provider, by default an
+  id starting with `deepseek`; a foreign provider declares `seasonal: true` in its
+  `providerRates` entry to opt in. Behaviour change: a non-DeepSeek provider no
+  longer has its rates doubled in DeepSeek's peak hours, and it gets neither the
+  tariff marker nor the tariff rows.
 
 ## 0.2.3
 
