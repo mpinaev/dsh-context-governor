@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.1
+
+- DSH 0.2.1 support declared. The 0.2.1 line needs no code change: every host
+  contract the plugin touches is unchanged there — `session/event` with
+  `request/context` and `request/header` (same payload fields, same
+  `contextWindow` and `config.maxTokens`), the `tokenUsage` / `contextPressure`
+  projections (`onChanged`, `stateOf`), the session query surface (`readSurface`,
+  `filterEvents`), `credentials.resolve`, the account balance shapes
+  (`credential-stored`, `value` / `bonusWallets`), `webServer.register`, the
+  model catalog (`llm.resolveModelInfo`) and both client slots
+  (`conversation.session.header.utilities`, `conversation.input.right`) — and
+  `uiWorkspace.startSession` only gained an optional argument. The compaction
+  formula in `dsh-compaction-basic` is byte-for-byte identical between
+  `0.2.0-rc.2` and `0.2.1-rc.1`, so the threshold and the bands stay right.
+- The compatibility range now lives in `engines.dsh`. DSH 0.2.1 checks that field
+  and ignores `peerDependencies` once it is present, so this is the declaration
+  that actually decides; the peers stay so package managers and older hosts keep
+  reading a range. The same range still matches `0.2.1-rc.1` because the host
+  compares prereleases included, which is what the plugin quietly relied on
+  before.
+- On Web, DSH 0.2.1 resolves a stored credential before the environment. The
+  balance follows with no code change — it resolves the key through
+  `credentials.resolve('DEEPSEEK_API_KEY')` and only then falls back to
+  `DEEPSEEK_API_KEY` from the environment — so the documented order now matches
+  the host's.
+- The DSH compatibility tables in all three READMEs name `0.2.1-rc.1`, and the
+  development section's assertion count now matches the smoke test (101, not the
+  stale 58).
+
 ## 0.3.0
 
 - The peak/off-peak tariff now honours Chinese public holidays. DeepSeek's rule

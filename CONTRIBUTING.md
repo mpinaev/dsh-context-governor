@@ -37,8 +37,10 @@ npm pack --dry-run    # the published file list must stay intended
   The whole point of the plugin is that it is free.
 - **Keep the compaction formula in sync** with `@deepseek-ai/dsh-compaction-basic`
   (`min(thresholdRatio * window, window - reserve - headroom)`, headroom 65536).
-- **Keep the peer range current.** When a new DSH line appears, widen
-  `peerDependencies` — otherwise the version gate silently disables the plugin.
+- **Keep the version range current.** The range lives in `engines.dsh`, which DSH
+  0.2.1 and newer prefer over `peerDependencies`; the peers stay for package
+  managers and older hosts. When a new DSH line appears, widen **both** —
+  otherwise the version gate silently disables the plugin.
 - The status payload is an API: add fields deliberately, and update `test/smoke.mjs`.
 
 ## Releases

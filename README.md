@@ -79,19 +79,20 @@ the cache buckets, the step cost and the balance provider gate.
 | DSH version | State |
 |---|---|
 | `0.1.7-rc.2` … `<0.2.0` | supported, verified live |
-| `0.2.0-rc.1` … `<0.3.0` | range declared; probed weekly by CI |
+| `0.2.0-rc.1` … `<0.3.0` | declared range; `0.2.1-rc.1` checked against the API, probed weekly by CI |
 
 DSH **disables** the plugin when its declared range does not cover the running
-version (peer ranges are matched with prereleases included). That is why the host
-logs its token source and tariff at startup: if those lines are missing, the plugin
-is probably disabled, and `dsh --dump-config` will say so.
+version. The plugin declares that range in `engines.dsh`, which DSH 0.2.1 and
+newer prefer over `peerDependencies`; either way the match includes prereleases.
+That is why the host logs its token source and tariff at startup: if those lines
+are missing, the plugin is probably disabled, and `dsh --dump-config` will say so.
 
 ## Development
 
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 58 assertions: no network, no model calls
+npm test                     # 101 assertions: no network, no model calls
 ./scripts/compat-check.sh    # boots a spare instance on 3099 and asks its API
 dsh plugin --profile web add "link:$PWD"
 ```
