@@ -305,6 +305,23 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     return sign + value.toFixed(2)
   }
 
+  /** Прочие валюты счёта: юани с долларами не складываем, поэтому они идут
+      припиской «+ ¥1.45», как в панели аккаунта DSH. Старый host поля не
+      присылает — приписки просто нет. */
+  function otherBalanceText(bal) {
+    if (!bal || !bal.ok || !Array.isArray(bal.others)) return ''
+    var out = ''
+    for (var i = 0; i < bal.others.length; i++) {
+      var item = bal.others[i]
+      if (!item || !item.currency) continue
+      var value = Number(item.total)
+      if (!Number.isFinite(value) || value === 0) continue
+      var sign = item.currency === 'CNY' ? '¥' : item.currency === 'USD' ? '$' : item.currency + ' '
+      out += ' + ' + sign + money2(value)
+    }
+    return out
+  }
+
   function weekdayName(season, M, lang) {
     if (!season || !season.beijing) return ''
     var index = season.beijing.weekdayIndex
@@ -344,7 +361,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
 
   function balanceStateText(bal, M) {
     if (!bal) return M.noData
-    if (bal.ok) return fmtMoney(bal) + ' ' + bal.currency + (bal.isAvailable === false ? ' (' + M.unavailable + ')' : '')
+    if (bal.ok) return fmtMoney(bal) + ' ' + bal.currency + otherBalanceText(bal) + (bal.isAvailable === false ? ' (' + M.unavailable + ')' : '')
     if (bal.state === 'other-provider') return M.balanceUnknown
     var text = M.balanceState[bal.state] || String(bal.state || '')
     if (bal.state === 'error' && bal.error) text += ': ' + bal.error
@@ -353,7 +370,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
 
   function balanceTipText(bal, M) {
     if (!bal) return M.dash
-    if (bal.ok) return M.balanceTitle(bal)
+    if (bal.ok) return M.balanceTitle(bal) + otherBalanceText(bal)
     return balanceStateText(bal, M)
   }
 
@@ -455,7 +472,7 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     var knownPrice = showPrice && cur && cur.costUsd != null
     var costText = knownPrice ? ('$' + fmtUsd(cur.costUsd)) : M.noPrice
     var seasonText = season ? (season.peak ? '⚡' + season.countdown : '🌙' + season.countdown) : ''
-    var balText = fmtMoney(bal)
+    var balText = fmtMoney(bal) + otherBalanceText(bal)
     var labelParts = cur ? [M.ctx + ' ' + fmtTok(cur.prompt)] : []
     if (cur && showPrice) labelParts.push(costText)
     if (cur && cachedProvider) labelParts.push(cacheHitLabel(cur, M))

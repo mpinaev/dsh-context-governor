@@ -92,7 +92,7 @@ are missing, the plugin is probably disabled, and `dsh --dump-config` will say s
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 101 assertions: no network, no model calls
+npm test                     # 111 assertions: no network, no model calls
 ./scripts/compat-check.sh    # boots a spare instance on 3099 and asks its API
 dsh plugin --profile web add "link:$PWD"
 ```
@@ -227,6 +227,11 @@ The `source` field says where the numbers came from: `account` or `api-key`.
 The fallback to the second source is deliberate: another build may have no platform
 sign-in, and the balance must not disappear because of that.
 
+The total is the topped-up amount plus the granted one, in the primary wallet's
+currency. Wallets in another currency are not added to it (yuan and dollars do
+not sum); they are shown as a `+ ¥1.45` suffix, the same way the DSH account
+panel does.
+
 **The balance is shown only for DeepSeek providers.** On cline, clinebot and any
 other provider a foreign total on the chip is plain misinformation: no balance is
 displayed there, and the panel shows a DeepSeek-only note instead of a number. The
@@ -236,7 +241,7 @@ session has no route of its own yet, the provider is not guessed and the balance
 stays hidden.
 
 The key **never leaves the host**: only numbers reach the client (total, bonus,
-top-up, currency, availability). Concurrent reads collapse, and failures degrade
+top-up, currency, availability, other wallets). Concurrent reads collapse, and failures degrade
 into a state (no-credential, error, disabled) rather than an exception. The
 refresh button clears the cache and re-reads the balance and the tariff.
 

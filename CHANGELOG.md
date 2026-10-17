@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.2
+
+- The balance is no longer short by the granted wallet on the platform-account
+  path. The account service returns topped-up wallets in `value` and granted
+  ones in `bonusWallets`; the plugin summed only `value` and reported it as the
+  total, so a $29.53 grant next to a $19.26 top-up read "$19.26, granted
+  $29.53, topped up $0" — smaller than the real balance and internally absurd.
+  The total is now topped-up plus granted in the primary wallet's currency
+  ($48.79 in that example), with the two parts still shown separately.
+- Wallets in another currency are surfaced instead of discarded. DeepSeek keeps
+  yuan and dollar wallets side by side, and the DSH account panel shows them as
+  "$29.53 + ¥1.45"; the plugin used to drop everything but the first currency.
+  The status payload now carries an `others` list (also filled from the extra
+  `balance_infos` of `/user/balance`), and the chip, the panel row and the
+  tooltip append it as "+ ¥1.45". Yuan and dollars are still never added to one
+  another.
+- The smoke suite pins the account arithmetic against the real wallet shape
+  (topped-up 19.26 + granted 29.53 + CNY 1.45 -> 48.79 USD + ¥1.45) and the
+  multi-currency `/user/balance` response; all three READMEs document the suffix
+  and the assertion count.
+
 ## 0.3.1
 
 - DSH 0.2.1 support declared. The 0.2.1 line needs no code change: every host

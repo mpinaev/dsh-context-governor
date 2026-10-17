@@ -82,7 +82,7 @@ dsh plugin --profile web add github:mpinaev/dsh-context-governor
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 101 项断言：不用网络，不调用模型
+npm test                     # 111 项断言：不用网络，不调用模型
 ./scripts/compat-check.sh    # 在 3099 端口启动一个临时实例并请求其 API
 dsh plugin --profile web add "link:$PWD"
 ```
@@ -193,12 +193,15 @@ outputRate）是低谷价；高峰时乘以 peakMultiplier（默认 2），因�
 `source` 字段说明数字来自哪里：`account` 或 `api-key`。回退到第二个来源是刻意的：
 别的构建可能没有平台登录，余额不该因此消失。
 
+总额为主钱包币种的充值加赠送。其他币种的钱包不并入总额（人民币与美元不能相加），
+而是以 `+ ¥1.45` 后缀显示，与 DSH 账户面板一致。
+
 **余额只对 DeepSeek 提供方显示。** 在 cline、clinebot 或任何其他提供方上，把别人的
 金额显示在胶囊里就是误导：那里不显示余额，面板用“仅限 DeepSeek”的说明替代数字。
 提供方列表通过 `balanceProviders` 配置（默认 `['deepseek-official']`），并接受任何
 以 `deepseek` 开头的 id。如果会话还没有自己的路由，就不猜提供方，余额保持隐藏。
 
-密钥**永不离开宿主**：只有数字到达客户端（总量、赠送、充值、货币、可用性）。并发
+密钥**永不离开宿主**：只有数字到达客户端（总量、赠送、充值、货币、可用性、其他钱包）。并发
 读取会合并，失败会退化为一种状态（no-credential、error、disabled）而不是抛异常。
 刷新按钮会清空缓存并重新读取余额和费率。
 

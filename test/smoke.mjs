@@ -212,7 +212,7 @@ async function main() {
 
   console.log('manifest')
   eq('name', mod.name, 'dsh-context-governor')
-  eq('version', manifest.version, '0.3.1')
+  eq('version', manifest.version, '0.3.2')
   eq('not private', manifest.private, undefined)
   eq('bundle patch declared', manifest.dsh.bundle.patch, './cordis.patch.yml')
   /* DSH 0.2.1 prefers engines.dsh and ignores the peers once it is present, so
@@ -276,6 +276,71 @@ async function main() {
   ok('deepseek keeps the seasonal tariff', d.season !== null && typeof d.season.peak === 'boolean', JSON.stringify(d.season))
   /* Календаря нет (сеть выключена) — клиент должен знать, что тариф приблизительный. */
   eq('missing holiday calendar is reported', d.season.holidayKnown, false)
+
+  console.log('balance: account wallets and extra currencies')
+  /* Платформа отдаёт пополнения (value) и подарки (bonusWallets) раздельно:
+     баланс — их сумма, иначе выходит «$19.26, подарок $29.53». Юани лежат
+     рядом с долларами и не складываются — они уходят в others. */
+  const hBal = makeHarness()
+  hBal.services.deepseekAccount = {
+    getState: async () => ({ status: 'credential-stored' }),
+    getBalance: async () => ({
+      status: 'ready',
+      value: [{ currency: 'USD', balance: '19.255853413' }],
+      bonusWallets: [
+        { currency: 'USD', balance: '29.532628866' },
+        { currency: 'CNY', balance: '1.45133752' },
+      ],
+    }),
+  }
+  mod.apply(hBal.ctx, Object.assign({}, RATES, OFFLINE, { balanceEnabled: true, useAccountBalance: true }))
+  feedSession(hBal, { header: { id: 'sess-balance' } }, {
+    provider: 'deepseek-official',
+    model: 'deepseek-flash',
+    maxTokens: 256000,
+    window: 1000000,
+    buckets: { uncachedInputTokens: 10, cacheReadTokens: 20, cacheWriteTokens: 0, outputTokens: 5 },
+  })
+  const account = (await statusOf(hBal, 'sess-balance')).balance
+  eq('account balance source', account.source, 'account')
+  eq('account balance sums topped-up and granted', account.total, 48.79)
+  eq('account balance keeps granted apart', account.granted, 29.53)
+  eq('account balance keeps topped-up apart', account.toppedUp, 19.26)
+  eq('account balance keeps the other currency', JSON.stringify(account.others),
+    JSON.stringify([{ currency: 'CNY', total: 1.45, granted: 1.45, toppedUp: 0 }]))
+
+  /* Тот же случай на пути API-ключа: /user/balance отдаёт несколько
+     balance_infos, второй валютой — юани. */
+  const hKey = makeHarness()
+  mod.apply(hKey.ctx, Object.assign({}, RATES, OFFLINE, { balanceEnabled: true, useAccountBalance: true }))
+  feedSession(hKey, { header: { id: 'sess-key' } }, {
+    provider: 'deepseek-official',
+    model: 'deepseek-flash',
+    maxTokens: 256000,
+    window: 1000000,
+    buckets: { uncachedInputTokens: 10, cacheReadTokens: 20, cacheWriteTokens: 0, outputTokens: 5 },
+  })
+  const realFetch = globalThis.fetch
+  process.env.DEEPSEEK_API_KEY = 'sk-test'
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({
+      is_available: true,
+      balance_infos: [
+        { currency: 'USD', total_balance: '48.78', granted_balance: '29.53', topped_up_balance: '19.25' },
+        { currency: 'CNY', total_balance: '1.64', granted_balance: '1.64', topped_up_balance: '0.00' },
+      ],
+    }),
+  })
+  try {
+    const keyed = (await statusOf(hKey, 'sess-key')).balance
+    eq('api-key balance total', keyed.total, 48.78)
+    eq('api-key balance keeps the other currency', JSON.stringify(keyed.others),
+      JSON.stringify([{ currency: 'CNY', total: 1.64, granted: 1.64, toppedUp: 0 }]))
+  } finally {
+    globalThis.fetch = realFetch
+    delete process.env.DEEPSEEK_API_KEY
+  }
 
   console.log('per-provider rates and a flat tariff')
   /* Чужой провайдер со своими ставками: цену считаем по НИМ, но сезона DeepSeek
@@ -515,6 +580,13 @@ async function main() {
     season: { peak: true, holiday: false, countdown: '2h', multiplier: 2, beijing: { weekdayIndex: 4, clock: '10:00' }, color: '#EF4444', holidayKnown: true },
     balance: { ok: true, state: 'ok', source: 'api-key', currency: 'USD', total: 8.95, granted: 0, toppedUp: 8.95, isAvailable: true },
   })
+  /* Второй кошелёк в другой валюте: показываем припиской, не складывая с USD. */
+  const otherCurrencyPayload = statusPayload({
+    config: { base: 100000, compactThreshold: 678464, windowTokens: 1000000, reservedTokens: 256000, route: 'deepseek-official/deepseek-flash', windowSource: 'catalog', provider: 'deepseek-official', priced: true },
+    current: { session: 's', prompt: 1050, fresh: 100, cacheRead: 900, cacheWrite: 50, output: 20, freshDelta: 100, cacheHitPct: 86, cacheHitText: '86', relative: 0.015, costUsd: 0.0013, band: 0, ts: 1 },
+    rates: { fresh: 0.3, cacheRead: 0.006, cacheWrite: 0.3, output: 1.2 },
+    balance: { ok: true, state: 'ok', source: 'account', currency: 'USD', total: 48.79, granted: 29.53, toppedUp: 19.26, isAvailable: true, others: [{ currency: 'CNY', total: 1.45, granted: 1.45, toppedUp: 0 }] },
+  })
   /* Провайдер без кэша: цену показываем, но без кэш-строк и кэш-ставок. */
   const noCachePayload = statusPayload({
     config: { base: 100000, compactThreshold: 126272, windowTokens: 200000, reservedTokens: 8192, route: 'other/model', windowSource: 'catalog', provider: 'other', priced: true, cached: false },
@@ -544,6 +616,11 @@ async function main() {
     ok('a seasonal provider shows the tariff (' + lang + ')',
       priceRows(seasonal) && seasonRows(seasonal) && seasonal.includes('×2') && seasonal.includes('$0.0013'),
       seasonal)
+
+    /* Второй кошелёк в юанях виден припиской, а не растворяется в долларах. */
+    const withOthers = clientRender(clientSource, otherCurrencyPayload, lang)
+    ok('the other currency is shown (' + lang + ')',
+      withOthers.includes('$48.79') && withOthers.includes('+ ¥1.45'), withOthers)
 
     /* Провайдер без кэша: ни строк, ни ставок, ни процента кэша. */
     const cacheless = clientRender(clientSource, noCachePayload, lang)

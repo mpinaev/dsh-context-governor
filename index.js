@@ -644,10 +644,31 @@ export function apply(ctx, config = {}) {
     return process.env.DEEPSEEK_API_KEY || ''
   }
 
+  const round2 = function (value) {
+    const number = Number(value)
+    return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0
+  }
+
+  /* Юани с долларами не складываем: одна валюта идёт в total, остальные —
+     отдельным списком `others`, как в панели аккаунта DSH («$29.53 + ¥1.45»).
+     Раньше прочие кошельки просто терялись, и баланс выглядел меньше. */
   function readBalance(parsed) {
-    const info = Array.isArray(parsed && parsed.balance_infos) ? parsed.balance_infos[0] : undefined
+    const infos = Array.isArray(parsed && parsed.balance_infos) ? parsed.balance_infos : []
+    const info = infos[0]
     if (info === undefined) return { ok: false, state: 'empty', error: 'balance response carried no balance_infos' }
-    return {
+    const others = []
+    for (const item of infos.slice(1)) {
+      const currency = String(item && item.currency || '')
+      const total = Number(item && item.total_balance || 0)
+      if (!currency || total === 0) continue
+      others.push({
+        currency: currency,
+        total: total,
+        granted: Number(item.granted_balance || 0),
+        toppedUp: Number(item.topped_up_balance || 0),
+      })
+    }
+    const balance = {
       ok: true,
       state: 'ok',
       source: 'api-key',
@@ -658,6 +679,8 @@ export function apply(ctx, config = {}) {
       granted: Number(info.granted_balance || 0),
       toppedUp: Number(info.topped_up_balance || 0),
     }
+    if (others.length > 0) balance.others = others
+    return balance
   }
 
   /** Официальный баланс аккаунта платформы DeepSeek через сервис harness.
@@ -680,33 +703,54 @@ export function apply(ctx, config = {}) {
         if (!state || state.status !== 'credential-stored') return null
       }
       const details = await svc.getBalance(clientMeta)
-      if (!details || details.status !== 'ready' || !details.value) return null
+      if (!details || details.status !== 'ready') return null
+      /* Платформа разделяет кошельки: value — пополнения (normal_wallets),
+         bonusWallets — подарки. Баланс = пополнено + подарок, а не только
+         пополнение: раньше total считался по value, и при подарке больше
+         пополнения панель показывала «$19.26, подарок $29.53». */
       const wallets = Array.isArray(details.value) ? details.value : []
       const bonuses = Array.isArray(details.bonusWallets) ? details.bonusWallets : []
-      if (wallets.length === 0) return null
-      const currency = String(wallets[0].currency || '')
-      /* Кошельки приходят строками и могут быть в разных валютах — суммируем
-         только валюту первого кошелька, чтобы не складывать юани с долларами. */
-      const sum = function (items) {
-        let total = 0
+      if (wallets.length === 0 && bonuses.length === 0) return null
+      const currency = String((wallets[0] || bonuses[0]).currency || '')
+      const byCurrency = new Map()
+      const add = function (items, bucket) {
         for (const item of items) {
-          if (String(item && item.currency || '') === currency) total += Number(item && item.balance || 0)
+          const code = String(item && item.currency || '')
+          if (!code) continue
+          const entry = byCurrency.get(code) || { currency: code, toppedUp: 0, granted: 0 }
+          entry[bucket] += Number(item && item.balance || 0)
+          byCurrency.set(code, entry)
         }
-        return total
       }
-      const total = sum(wallets)
-      const granted = sum(bonuses)
-      return {
+      add(wallets, 'toppedUp')
+      add(bonuses, 'granted')
+      const own = byCurrency.get(currency) || { toppedUp: 0, granted: 0 }
+      const total = own.toppedUp + own.granted
+      const others = []
+      for (const entry of byCurrency.values()) {
+        if (entry.currency === currency) continue
+        const otherTotal = entry.toppedUp + entry.granted
+        if (otherTotal === 0) continue
+        others.push({
+          currency: entry.currency,
+          total: round2(otherTotal),
+          granted: round2(entry.granted),
+          toppedUp: round2(entry.toppedUp),
+        })
+      }
+      const account = {
         ok: true,
         state: 'ok',
         source: 'account',
         at: new Date().toISOString(),
         currency: currency,
         isAvailable: true,
-        total: Math.round(total * 100) / 100,
-        granted: Math.round(granted * 100) / 100,
-        toppedUp: Math.round(Math.max(0, total - granted) * 100) / 100,
+        total: round2(total),
+        granted: round2(own.granted),
+        toppedUp: round2(own.toppedUp),
       }
+      if (others.length > 0) account.others = others
+      return account
     } catch (error) {
       return null
     }
