@@ -195,6 +195,16 @@ function feedSession(harness, session, spec) {
   harness.state.onChange(session, 'tokenUsage', {}, 1)
 }
 
+async function handoffOf(harness, sessionId, lang) {
+  const handler = harness.registered[0].handler
+  const query = 'sessionId=' + encodeURIComponent(sessionId) + '&lang=' + lang
+  let body = ''
+  await handler({ url: '/context-governor/api/handoff?' + query, headers: { 'x-dsh-context-governor': '1' }, method: 'GET' },
+    { setHeader() {}, end(text) { body = text } })
+  for (let i = 0; i < 50 && !body; i += 1) await tick()
+  return body ? (JSON.parse(body).text || '') : ''
+}
+
 async function statusOf(harness, sessionId) {
   const handler = harness.registered[0].handler
   const query = 'ver=test&tz=10800&lang=ru' + (sessionId ? '&sessionId=' + sessionId : '')
@@ -212,7 +222,7 @@ async function main() {
 
   console.log('manifest')
   eq('name', mod.name, 'dsh-context-governor')
-  eq('version', manifest.version, '0.3.2')
+  eq('version', manifest.version, '0.3.3')
   eq('not private', manifest.private, undefined)
   eq('bundle patch declared', manifest.dsh.bundle.patch, './cordis.patch.yml')
   /* DSH 0.2.1 prefers engines.dsh and ignores the peers once it is present, so
@@ -341,6 +351,91 @@ async function main() {
     globalThis.fetch = realFetch
     delete process.env.DEEPSEEK_API_KEY
   }
+
+  console.log('handoff: the whole session, not just the last change')
+  const userEvent = (text) => ({ type: 'user/message', data: { content: [{ type: 'text', text }] } })
+  const assistantEvent = (text) => ({ type: 'assistant/message', data: { message: { content: [{ type: 'text', text }] } } })
+  const history = [
+    userEvent('починить баланс плагина'),
+    assistantEvent('нашёл причину: платформа отдаёт подарок отдельным списком'),
+    userEvent('выпусти 0.3.2 во все места'),
+    assistantEvent('сделал коммит, тег и публикацию'),
+    userEvent('улучши функцию handoff'),
+    assistantEvent('текущее состояние: собираю ход сессии целиком'),
+  ]
+  const hHand = makeHarness()
+  hHand.services.sessionQuery = {
+    readSurface: async () => ({ session: { cwd: '/tmp' }, events: history }),
+    filterEvents: async () => [],
+  }
+  mod.apply(hHand.ctx, Object.assign({}, RATES, OFFLINE, { balanceEnabled: false }))
+  const handoffRu = await handoffOf(hHand, 'sess-handoff', 'ru')
+  ok('handoff names the first task, not the last', handoffRu.includes('Задача: починить баланс плагина'), handoffRu)
+  ok('handoff walks the middle of the session',
+    handoffRu.includes('выпусти 0.3.2 во все места') && handoffRu.includes('сделал коммит'), handoffRu)
+  ok('handoff numbers the arc', handoffRu.includes('1. ') && handoffRu.includes('2. ') && handoffRu.includes('3. '), handoffRu)
+  ok('handoff ends with the current state',
+    handoffRu.includes('улучши функцию handoff') && handoffRu.includes('текущее состояние'), handoffRu)
+  for (const pair of [['en', 'Session arc:'], ['zh', '会话过程：']]) {
+    const text = await handoffOf(hHand, 'sess-handoff', pair[0])
+    ok('handoff arc is localized (' + pair[0] + ')', text.includes(pair[1]) && text.includes('0.3.2'), text)
+  }
+
+  /* Harness дописывает в поверхность AGENTS.md, runtime-context и каталог
+     скиллов как user/message — это не запросы, в «ход сессии» они не идут. */
+  const injected = [
+    { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'почини баланс' }] } },
+    { type: 'user/message', data: { source: { kind: 'agent-instructions' }, content: [{ type: 'text', text: '<system-reminder> AGENTS.md' }] } },
+    { type: 'user/message', data: { source: { kind: 'runtime-context' }, content: [{ type: 'text', text: 'Current runtime context. This snapshot' }] } },
+    { type: 'user/message', data: { source: { kind: 'skill-catalog' }, content: [{ type: 'text', text: '<system-reminder> A skill is' }] } },
+    assistantEvent('нашёл причину'),
+    { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'image', source: { type: 'base64', mediaType: 'image/png', data: 'AA==' } }] } },
+    assistantEvent('сверил скриншот с платформой'),
+  ]
+  const hInjected = makeHarness()
+  hInjected.services.sessionQuery = {
+    readSurface: async () => ({ session: { cwd: '/tmp' }, events: injected }),
+    filterEvents: async () => [],
+  }
+  mod.apply(hInjected.ctx, Object.assign({}, RATES, OFFLINE, { balanceEnabled: false }))
+  const injectedHandoff = await handoffOf(hInjected, 'sess-injected', 'ru')
+  ok('injected instructions are not a session step',
+    !injectedHandoff.includes('system-reminder') && !injectedHandoff.includes('Current runtime context'), injectedHandoff)
+  ok('an image-only message is a step of its own',
+    injectedHandoff.includes('[изображение]') && injectedHandoff.includes('сверил скриншот'), injectedHandoff)
+
+  /* Пользователь может дослать картинку отдельным сообщением в том же ходе:
+     это один шаг, а не два. */
+  const sameTurn = [
+    { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'почини баланс' }] } },
+    { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'image', source: { type: 'base64', mediaType: 'image/png', data: 'AA==' } }] } },
+    assistantEvent('готово'),
+  ]
+  const hSame = makeHarness()
+  hSame.services.sessionQuery = {
+    readSurface: async () => ({ session: { cwd: '/tmp' }, events: sameTurn }),
+    filterEvents: async () => [],
+  }
+  mod.apply(hSame.ctx, Object.assign({}, RATES, OFFLINE, { balanceEnabled: false }))
+  const sameHandoff = await handoffOf(hSame, 'sess-same', 'ru')
+  ok('two messages of one turn make one step',
+    sameHandoff.includes('1. почини баланс [изображение]') && !sameHandoff.includes('2. '), sameHandoff)
+
+  const longEvents = []
+  for (let i = 1; i <= 30; i += 1) {
+    longEvents.push(userEvent('запрос ' + i))
+    longEvents.push(assistantEvent('ответ ' + i))
+  }
+  const hLong = makeHarness()
+  hLong.services.sessionQuery = {
+    readSurface: async () => ({ session: { cwd: '/tmp' }, events: longEvents }),
+    filterEvents: async () => [],
+  }
+  mod.apply(hLong.ctx, Object.assign({}, RATES, OFFLINE, { balanceEnabled: false }))
+  const longHandoff = await handoffOf(hLong, 'sess-long', 'ru')
+  ok('a long session keeps both ends and marks the gap',
+    longHandoff.includes('запрос 1') && longHandoff.includes('запрос 30') && longHandoff.includes('пропущено запросов'), longHandoff)
+  ok('the skipped middle is not dumped', !longHandoff.includes('запрос 15'), longHandoff)
 
   console.log('per-provider rates and a flat tariff')
   /* Чужой провайдер со своими ставками: цену считаем по НИМ, но сезона DeepSeek

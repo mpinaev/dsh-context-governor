@@ -305,6 +305,10 @@ const HANDOFF = {
     children: function (n, tokens) { return 'Child sessions: ' + n + ', still holding ' + tokens + ' tokens.' },
     task: 'Task: ',
     taskPlaceholder: '<state the task in one line>',
+    image: '[image]',
+    arcTitle: 'Session arc:',
+    arcStep: function (n, request, response) { return n + '. ' + request + (response ? ' → ' + response : '') },
+    arcSkipped: function (n) { return '… ' + n + ' requests in between omitted; see the session log.' },
     state: 'State: ',
     statePlaceholder: '<what is done and what remains>',
     files: 'Touched files: ',
@@ -319,6 +323,10 @@ const HANDOFF = {
     children: function (n, tokens) { return '子会话：' + n + ' 个，另占约 ' + tokens + ' tokens。' },
     task: '任务：',
     taskPlaceholder: '<用一行说明任务>',
+    image: '[图片]',
+    arcTitle: '会话过程：',
+    arcStep: function (n, request, response) { return n + '. ' + request + (response ? ' → ' + response : '') },
+    arcSkipped: function (n) { return '……中间省略 ' + n + ' 个请求（见会话日志）。' },
     state: '状态：',
     statePlaceholder: '<已完成与待办>',
     files: '涉及文件：',
@@ -333,6 +341,10 @@ const HANDOFF = {
     children: function (n, tokens) { return 'Дочерних сессий: ' + n + ', суммарно ещё ' + tokens + ' токенов.' },
     task: 'Задача: ',
     taskPlaceholder: '<сформулируй задачу одной строкой>',
+    image: '[изображение]',
+    arcTitle: 'Ход сессии:',
+    arcStep: function (n, request, response) { return n + '. ' + request + (response ? ' → ' + response : '') },
+    arcSkipped: function (n) { return '… между ними пропущено запросов: ' + n + ' (см. лог сессии).' },
     state: 'Состояние: ',
     statePlaceholder: '<что сделано и что осталось>',
     files: 'Затронутые файлы: ',
@@ -340,6 +352,13 @@ const HANDOFF = {
     rules: 'Правила новой сессии: не тянуть историю прошлой; приложить только нужные файлы.',
   },
 }
+
+/* Границы документа handoff: сессия целиком, но без мегабайтов. */
+const HANDOFF_TASK_CHARS = 400
+const HANDOFF_ARC_STEPS = 24
+const HANDOFF_STEP_REQUEST_CHARS = 180
+const HANDOFF_STEP_RESPONSE_CHARS = 220
+const HANDOFF_STATE_CHARS = 900
 
 /** en (по умолчанию), zh, ru; всё незнакомое — en. */
 function normalizeLang(lang) {
@@ -1250,33 +1269,69 @@ export function apply(ctx, config = {}) {
     return parts.join('\n').trim()
   }
 
+  /** Сообщение без текста, но с картинкой: в handoff это отдельный шаг. */
+  function messageHasImage(message) {
+    if (!message || !Array.isArray(message.content)) return false
+    for (const block of message.content) {
+      if (block && block.type === 'image') return true
+    }
+    return false
+  }
+
   function clip(text, limit) {
     const one = String(text || '').replace(/\s+/g, ' ').trim()
     return one.length > limit ? one.slice(0, limit - 1) + '…' : one
   }
 
-  /** Последняя задача пользователя и последнее состояние ассистента + cwd. */
+  /** Задача сессии целиком: первый запрос, вся цепочка «запрос → итог»,
+      последнее состояние ассистента, cwd и затронутые файлы. Раньше брались
+      только последние сообщения, и сводка выглядела как «что случилось в
+      конце», без пути к этому концу. */
   async function surfaceDigest(sessionId) {
-    const out = { task: '', state: '', cwd: '', touched: [] }
+    const out = { task: '', state: '', cwd: '', touched: [], steps: [] }
     try {
       const sq = typeof ctx.get === 'function' ? ctx.get('sessionQuery') : undefined
       if (!sq || typeof sq.readSurface !== 'function') return out
       const surface = await sq.readSurface(sessionId)
       if (surface && surface.session && typeof surface.session.cwd === 'string') out.cwd = surface.session.cwd
       const events = Array.isArray(surface && surface.events) ? surface.events : []
-      const touched = []
-      for (let i = events.length - 1; i >= 0; i--) {
-        const event = events[i]
+      /* Поверхность приходит в порядке истории модели: идём вперёд и на каждый
+         запрос пользователя запоминаем последний ответ ассистента до
+         следующего запроса — это итог хода. */
+      const steps = []
+      let step = null
+      for (const event of events) {
         const type = event && event.type
         const data = (event && event.data) || {}
-        /* tool/call не входит в surface (только сообщения и tool/result) — пути берём из сырого лога ниже */
-        if (type !== 'user/message' && type !== 'assistant/message') continue
-        const text = type === 'user/message' ? messageText(data) : messageText(data.message)
+        if (type === 'user/message') {
+          /* В поверхность попадает не только речь пользователя: harness
+             вставляет AGENTS.md, runtime-context, каталог скиллов и время.
+             У них source.kind не 'user', и запросами они не считаются. */
+          const source = data.source
+          const kind = source && typeof source === 'object' ? source.kind : undefined
+          if (kind !== undefined && kind !== 'user') continue
+          const text = messageText(data)
+          const image = messageHasImage(data)
+          if (!text && !image) continue
+          /* Несколько сообщений одного хода (текст, потом картинка) — один
+             шаг: новый начинается только после ответа ассистента. */
+          if (!step || step.response) {
+            step = { request: '', response: '', image: false }
+            steps.push(step)
+          }
+          if (text) step.request = step.request ? step.request + ' / ' + text : text
+          if (image) step.image = true
+          if (!out.task && text) out.task = text
+          continue
+        }
+        if (type !== 'assistant/message') continue
+        const text = messageText(data.message)
         if (!text) continue
-        if (type === 'user/message' && !out.task) out.task = text
-        if (type === 'assistant/message' && !out.state) out.state = text
-        if (out.task && out.state) break
+        out.state = text
+        if (step) step.response = text
       }
+      out.steps = steps
+      const touched = []
       const edits = []
       const fallback = []
       try {
@@ -1326,17 +1381,51 @@ export function apply(ctx, config = {}) {
     if (!target) return t.noTarget
     const digest = await surfaceDigest(target)
     const gitFiles = changedFiles(digest.cwd)
+    /* Пути из git status относительны cwd, из tool/call — абсолютны: приводим
+       к одному виду, иначе один файл висит в списке дважды. */
+    const cwdPrefix = digest.cwd && !digest.cwd.endsWith('/') ? digest.cwd + '/' : digest.cwd
+    const relative = function (item) {
+      const path = String(item || '')
+      return cwdPrefix && path.indexOf(cwdPrefix) === 0 ? path.slice(cwdPrefix.length) : path
+    }
     const files = []
-    for (const item of gitFiles.concat(digest.touched || [])) if (item && files.indexOf(item) === -1) files.push(item)
+    for (const raw of gitFiles.concat(digest.touched || [])) {
+      const item = relative(raw)
+      if (item && files.indexOf(item) === -1) files.push(item)
+    }
     const lines = []
     lines.push(t.title)
     lines.push('')
     lines.push(cur ? t.context(cur) : t.noContext)
     if (cur && snap.children.length > 0) lines.push(t.children(snap.children.length, snap.childrenPromptSum))
     lines.push('')
-    lines.push(t.task + (digest.task ? clip(digest.task, 400) : t.taskPlaceholder))
+    const steps = Array.isArray(digest.steps) ? digest.steps : []
+    const taskText = digest.task
+      ? clip(digest.task, HANDOFF_TASK_CHARS)
+      : (steps.length > 0 && steps[0].image ? t.image : t.taskPlaceholder)
+    lines.push(t.task + taskText)
+    /* Ход сессии: каждый запрос пользователя и итог хода. Длинную сессию
+       показываем началом и концом, середину честно помечаем пропуском. */
+    if (steps.length > 0) {
+      lines.push('')
+      lines.push(t.arcTitle)
+      const half = Math.floor(HANDOFF_ARC_STEPS / 2)
+      const head = steps.length > HANDOFF_ARC_STEPS ? steps.slice(0, half) : steps
+      const tail = steps.length > HANDOFF_ARC_STEPS ? steps.slice(steps.length - half) : []
+      const pushStep = function (item, number) {
+        let request = item.request ? clip(item.request, HANDOFF_STEP_REQUEST_CHARS) : ''
+        if (item.image) request = request ? request + ' ' + t.image : t.image
+        lines.push(t.arcStep(number, request, clip(item.response, HANDOFF_STEP_RESPONSE_CHARS)))
+      }
+      head.forEach(function (item, index) { pushStep(item, index + 1) })
+      if (tail.length > 0) {
+        const skipped = steps.length - head.length - tail.length
+        if (skipped > 0) lines.push(t.arcSkipped(skipped))
+        tail.forEach(function (item, index) { pushStep(item, steps.length - tail.length + index + 1) })
+      }
+    }
     lines.push('')
-    lines.push(t.state + (digest.state ? clip(digest.state, 900) : t.statePlaceholder))
+    lines.push(t.state + (digest.state ? clip(digest.state, HANDOFF_STATE_CHARS) : t.statePlaceholder))
     lines.push('')
     lines.push(t.files + (files.length > 0 ? files.join(', ') : t.filesPlaceholder))
     lines.push('')

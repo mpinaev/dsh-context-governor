@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.3
+
+- The handoff document now covers the whole session instead of its tail. It used
+  to take the last user message as the task and the last assistant message as
+  the state, so a long session read as "what happened at the end" with no path
+  to it. The host now walks the model surface in order: the first task, then
+  every user request with the last assistant answer to it (the session arc),
+  then the current state and the touched files.
+- Injected harness messages are not requests. AGENTS.md, the runtime-context
+  snapshot, the skill catalog and the time snapshot arrive as `user/message`
+  events whose `source.kind` is not `user`; before, they became arc steps and the
+  answer to the previous turn stuck to them. Now only real user messages — or
+  messages from an older host without a source — start a step.
+- Several messages of one turn fold into one step: a user who sends text and then
+  an image is one request, and the image is marked `[изображение]` / `[image]` /
+  `[图片]`. Touched files are reduced to one form (relative to cwd), so a file no
+  longer appears twice under two different paths.
+- A very long session keeps its beginning and its end (24 steps) and says how
+  many middle requests were skipped, instead of dumping everything.
+- The smoke suite covers the arc: first task versus last, the middle, numbering,
+  en/zh localization, injected-message filtering, image steps, same-turn merging
+  and the long-session gap marker.
+
 ## 0.3.2
 
 - The balance is no longer short by the granted wallet on the platform-account

@@ -92,7 +92,7 @@ are missing, the plugin is probably disabled, and `dsh --dump-config` will say s
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 111 assertions: no network, no model calls
+npm test                     # 122 assertions: no network, no model calls
 ./scripts/compat-check.sh    # boots a spare instance on 3099 and asks its API
 dsh plugin --profile web add "link:$PWD"
 ```
@@ -263,11 +263,20 @@ fresh input or a cache miss, and the tariff doubles that difference.
 
 ## Handoff button
 
-One click: the host assembles a session summary (task, state, cwd, touched files,
+One click: the host assembles a session summary (the first task, the session
+arc — every request and what came of it, the current state, cwd, touched files,
 child sessions), the client opens a **new session in the same workspace** through
 `ctx.uiWorkspace.startSession()` and puts the summary into its draft. There are
 no branches or fallbacks: no Alt+click, no insertion into the current session, no
 clipboard.
+
+The arc is built from the whole model surface, not from the latest turn: the first
+task, then each user request with the last assistant answer to it, then the
+current state. Harness-injected messages (AGENTS.md, runtime context, the skill
+catalog) carry `source.kind !== 'user'` and never become steps; several messages
+of one turn (text plus an image) fold into a single step, and an image is marked
+`[image]`. A very long session keeps its beginning and its end — 24 steps — and
+says how many middle requests were skipped.
 
 Two declared services keep it reliable:
 

@@ -82,7 +82,7 @@ dsh plugin --profile web add github:mpinaev/dsh-context-governor
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 111 项断言：不用网络，不调用模型
+npm test                     # 122 项断言：不用网络，不调用模型
 ./scripts/compat-check.sh    # 在 3099 端口启动一个临时实例并请求其 API
 dsh plugin --profile web add "link:$PWD"
 ```
@@ -219,9 +219,16 @@ outputRate）是低谷价；高峰时乘以 peakMultiplier（默认 2），因�
 
 ## 交接按钮
 
-一键完成：宿主组装会话摘要（任务、状态、cwd、触及的文件、子会话），客户端通过
-`ctx.uiWorkspace.startSession()` 在**同一工作区打开新会话**，并把摘要放进它的草稿。
-没有分支或回退：没有 Alt+点击、没有插入当前会话、没有剪贴板。
+一键完成：宿主组装会话摘要（首个任务、会话过程——每个请求及其结果、当前状态、cwd、
+触及的文件、子会话），客户端通过 `ctx.uiWorkspace.startSession()` 在**同一工作区打开
+新会话**，并把摘要放进它的草稿。没有分支或回退：没有 Alt+点击、没有插入当前会话、
+没有剪贴板。
+
+会话过程按模型的完整历史生成，而不只是最后一轮：先是首个任务，然后是每个用户请求及
+其最后一条助手回答，最后是当前状态。harness 注入的消息（AGENTS.md、runtime-context、
+技能目录）带有 `source.kind !== 'user'`，不会成为步骤；同一轮的多个消息（文字加图片）
+会合并为一步，图片标记为 `[图片]`。很长的会话保留开头和结尾——24 步——并说明中间省略
+了多少个请求。
 
 两个声明的服务保证了它的可靠性：
 
