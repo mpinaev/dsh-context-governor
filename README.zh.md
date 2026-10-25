@@ -70,7 +70,7 @@ dsh plugin --profile web add github:mpinaev/dsh-context-governor
 | DSH 版本 | 状态 |
 |---|---|
 | `0.1.7-rc.2` … `<0.2.0` | 支持，已在线验证 |
-| `0.2.0-rc.1` … `<0.3.0` | 已声明范围；`0.2.1-rc.1` 已对照 API 核对，CI 每周探测 |
+| `0.2.0-rc.1` … `<0.3.0` | 支持；`0.2.1-rc.3` 已对照 API 核对，CI 每周探测 |
 
 当声明的范围不覆盖正在运行的版本时，DSH 会**停用**插件。范围声明在 `engines.dsh`
 中：DSH 0.2.1 及以后优先使用该字段，`peerDependencies` 仅作兼容保留；两种匹配都
@@ -82,7 +82,7 @@ dsh plugin --profile web add github:mpinaev/dsh-context-governor
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 122 项断言：不用网络，不调用模型
+npm test                     # 123 项断言：不用网络，不调用模型
 ./scripts/compat-check.sh    # 在 3099 端口启动一个临时实例并请求其 API
 dsh plugin --profile web add "link:$PWD"
 ```

@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.4
+
+- DSH 0.2.1-rc.3 support declared — that is the newest release (published
+  2026-10-23). No host- or client-facing code change was needed: every contract
+  the plugin touches is unchanged between `0.2.1-rc.1` and `0.2.1-rc.3` — the
+  `session/event` payload, the `tokenUsage` / `contextPressure` projections, the
+  session query surface, `credentials.resolve` and both balance shapes,
+  `webServer.register`, the model catalog (`llm.resolveModelInfo`), the two
+  client slots (`conversation.session.header.utilities`,
+  `conversation.input.right`) and `uiWorkspace.startSession`. The compaction
+  formula in `dsh-compaction-basic` is byte-for-byte identical to rc.1
+  (`min(thresholdRatio * window, window - reserve - headroom)`, headroom 65536),
+  so the threshold and the bands stay right.
+- What rc.2 and rc.3 did change does not reach the plugin: V4.1-Flash-1017 and
+  DeepSeek Search/Fetch extend the model and tool set (the window still comes
+  from the catalog), the new "More" plugin menus add slots but do not move the
+  two the plugin uses, and the API-key model-list sync is the same account path
+  the plugin already reads.
+- Verified live on rc.3, not just on paper: the status route returns the token
+  projections and the catalog window, the handoff route returns a document, the
+  balance arrives from the stored API key, both client slots exist in the
+  client contract, and `dsh --profile web --dump-config` keeps
+  `id: context-governor` enabled.
+- The compatibility tables in all three READMEs name `0.2.1-rc.3`, and the smoke
+  suite now pins the declared range (`^0.1.7-rc.2 || ^0.2.0-rc.1`) instead of
+  only checking that some range exists, so an accidental narrowing fails before
+  a release.
+
 ## 0.3.3
 
 - The handoff document now covers the whole session instead of its tail. It used

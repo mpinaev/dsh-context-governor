@@ -222,14 +222,14 @@ async function main() {
 
   console.log('manifest')
   eq('name', mod.name, 'dsh-context-governor')
-  eq('version', manifest.version, '0.3.3')
+  eq('version', manifest.version, '0.3.4')
   eq('not private', manifest.private, undefined)
   eq('bundle patch declared', manifest.dsh.bundle.patch, './cordis.patch.yml')
   /* DSH 0.2.1 prefers engines.dsh and ignores the peers once it is present, so
      the declared range lives there; the peers stay for package managers and
      older hosts that only read them. */
-  ok('version gate declared', typeof manifest.engines.dsh === 'string' &&
-    typeof manifest.peerDependencies['@deepseek-ai/dsh-session-projection'] === 'string')
+  eq('version gate range', manifest.engines.dsh, '^0.1.7-rc.2 || ^0.2.0-rc.1')
+  ok('peer ranges stay declared', typeof manifest.peerDependencies['@deepseek-ai/dsh-session-projection'] === 'string')
   ok('core services injected', ['webServer', 'sessions', 'llm', 'agentDefaultModel', 'sessionQuery'].every((s) => mod.inject.includes(s)))
 
   console.log('projection path')
