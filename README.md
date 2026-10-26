@@ -8,9 +8,11 @@
 
 A DeepSeek Harness plugin: a session context indicator — prompt size, step cost,
 cache-hit, bands and the compaction threshold, DeepSeek balance and the
-peak/off-peak tariff, plus a handoff button.
+peak/off-peak tariff, plus a handoff button and a compact button that runs the
+built-in `/compact`.
 
-**It never calls a model and spends no tokens at all** — details below.
+**On its own it never calls a model and spends no tokens** — the one exception is
+the compact button, which asks the harness to run `/compact` when you click it.
 
 ## What it looks like
 
@@ -21,27 +23,37 @@ in English, Chinese and Russian:
 |---|---|---|
 | ![Session context panel in English](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-1.png) | ![会话上下文面板（中文）](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-2.png) | ![Панель контекста сессии (русский)](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-3.png) |
 
-The handoff button sits next to the model selector:
+The handoff button sits next to the model selector; the compact button sits
+beside it:
 
 ![Handoff button](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-4.png)
 
-## No tokens, no model calls
+## No tokens and no model calls on its own
 
 Everything the plugin shows is **measurement and arithmetic**. It reads tokens and
 the window from harness projections, computes the cost with the configured rates
 and fetches the balance over HTTP.
 
-- **No generation requests.** Not for review, not for summarization, not in the
-  background: the plugin never asks a model to compute anything.
-- **Zero tokens.** The plugin sends no provider requests and spends none of your
-  budget. Its only touch of the LLM layer is reading the model catalog
-  (`resolveModelInfo`) for the window and limits; that is not generation and not
-  billable tokens.
-- **Nothing is modified.** It does not touch the history, the system prompt or the
-  prefix cache, so it cannot affect prompt caching.
+- **No generation requests on its own.** Not for review, not for summarization,
+  not in the background: the plugin itself never asks a model to compute
+  anything. The compact button is the one exception — it runs the harness's own
+  `/compact`, which does the summarization.
+- **Zero tokens on its own.** The plugin sends no provider requests and spends
+  none of your budget by itself. Its only touch of the LLM layer is reading the
+  model catalog (`resolveModelInfo`) for the window and limits; that is not
+  generation and not billable tokens. Tokens are spent only when you press
+  compact.
+- **Nothing is modified on its own.** It does not touch the history, the system
+  prompt or the prefix cache, so it cannot affect prompt caching. The compact
+  button is an explicit shortcut to the harness command, not a silent edit.
 - **The network is used for the balance only.** The harness account service (when
   signed in) and `api.deepseek.com/user/balance` are not a model. Plus `git status`
   on a handoff click, locally.
+
+The compact button is the deliberate exception: it does not summarize anything
+itself, it calls the harness's own `/compact` — the same command you would type.
+That command invokes the harness summarizer and therefore spends tokens. It runs
+only when you click, and the plugin shows the host's own result or refusal.
 
 ## Install
 
@@ -92,7 +104,7 @@ are missing, the plugin is probably disabled, and `dsh --dump-config` will say s
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 123 assertions: no network, no model calls
+npm test                     # 132 assertions: no network, no model calls
 ./scripts/compat-check.sh    # boots a spare instance on 3099 and asks its API
 dsh plugin --profile web add "link:$PWD"
 ```

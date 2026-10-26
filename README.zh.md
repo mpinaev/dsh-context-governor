@@ -7,9 +7,11 @@
 [![license](https://img.shields.io/npm/l/dsh-context-governor)](LICENSE)
 
 一个 DeepSeek Harness 插件：会话上下文指示器——prompt 大小、单步费用、缓存命中、
-档位与压缩阈值、DeepSeek 余额与高峰/低谷费率，外加一个交接按钮。
+档位与压缩阈值、DeepSeek 余额与高峰/低谷费率，外加一个交接按钮和一个运行内置
+`/compact` 的压缩按钮。
 
-**它从不调用模型，也完全不消耗 token**——详见下文。
+**插件自身从不调用模型，也不消耗 token**——唯一例外是压缩按钮：点击时它会请
+harness 执行 `/compact`。
 
 ## 界面预览
 
@@ -19,22 +21,30 @@
 |---|---|---|
 | ![Session context panel in English](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-1.png) | ![会话上下文面板（中文）](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-2.png) | ![Панель контекста сессии (русский)](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-3.png) |
 
-交接按钮位于模型选择器旁边：
+交接按钮位于模型选择器旁边，压缩按钮就在它旁边：
 
 ![交接按钮](https://raw.githubusercontent.com/mpinaev/dsh-context-governor/main/assets/screenshot-4.png)
 
-## 不消耗 token，不调用模型
+## 自身不消耗 token，不调用模型
 
 插件显示的一切都是**测量与算术**。它从 harness 投影读取 token 和窗口，用配置的费率
 计算费用，并通过 HTTP 获取余额。
 
-- **没有生成请求。** 不做审阅、不做摘要、不在后台：插件从不请求模型计算任何东西。
-- **零 token。** 插件不向提供方发送请求，不花你一分预算。它唯一接触 LLM 层的地方是
-  读取模型目录（`resolveModelInfo`）以获取窗口和上限；那不是生成，也不计费。
-- **不改动任何东西。** 它不碰历史、系统提示词或前缀缓存，因此不会影响 prompt 缓存。
+- **自身没有生成请求。** 不做审阅、不做摘要、不在后台：插件自身从不请求模型计算
+  任何东西。唯一例外是压缩按钮：它运行 harness 内置的 `/compact`，由 harness 完成
+  摘要。
+- **自身零 token。** 插件不向提供方发送请求，不花你一分预算。它唯一接触 LLM 层的
+  地方是读取模型目录（`resolveModelInfo`）以获取窗口和上限；那不是生成，也不计费。
+  只有按下压缩按钮时才会消耗 token。
+- **自身不改动任何东西。** 它不碰历史、系统提示词或前缀缓存，因此不会影响 prompt
+  缓存。压缩按钮是对 harness 命令的显式调用，不是悄悄修改。
 - **只有余额会用到网络。** harness 账户服务（已登录时）和
   `api.deepseek.com/user/balance` 都不是模型。另外，点击交接时会在本地执行一次
   `git status`。
+
+压缩按钮是有意保留的例外：它自己不做摘要，而是调用 harness 内置的 `/compact`——
+和你手动输入的是同一条命令。该命令会调用 harness 摘要模型，因此会消耗 token。
+只有点击时才运行，插件会显示 harness 自己的结果或拒绝原因。
 
 ## 安装
 
@@ -82,7 +92,7 @@ dsh plugin --profile web add github:mpinaev/dsh-context-governor
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 123 项断言：不用网络，不调用模型
+npm test                     # 132 项断言：不用网络，不调用模型
 ./scripts/compat-check.sh    # 在 3099 端口启动一个临时实例并请求其 API
 dsh plugin --profile web add "link:$PWD"
 ```

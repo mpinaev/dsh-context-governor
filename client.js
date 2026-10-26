@@ -5,13 +5,16 @@
 // 2) Кнопка handoff в композере: один клик собирает сводку сессии и открывает
 //    новую сессию в том же рабочем пространстве (ctx.uiWorkspace.startSession),
 //    подставляя сводку в её черновик. Никаких веток и запасных путей.
+// 3) Кнопка compact рядом с handoff: один клик выполняет встроенную команду
+//    harness /compact через ctx.remote.commands.execute. Плагин модель не зовёт;
+//    сжимает штатный обработчик, поэтому сводка может стоить токенов.
 //
 // Язык интерфейса: en (по умолчанию), zh, ru. Переключается маленькой кнопкой
 // в панели чипа и запоминается в localStorage. Хост-роуты закрыты служебным
 // заголовком; язык сводки handoff передаётся параметром lang.
 //
-// Данные — только с /context-governor/api/* (host half). История и промпт
-// не изменяются.
+// Данные — с /context-governor/api/* (host half). История не меняется, кроме
+// кнопки compact: она по клику вызывает штатную /compact, и та сжимает сессию.
 
 window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) => {
   var module = { exports: {} }
@@ -101,6 +104,12 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         busy: '…', started: 'new session…', inserted: 'summary inserted',
         none: 'no data', noChannel: 'new-session channel unavailable',
       },
+      compact: {
+        label: '⇲ compact',
+        tip: 'Run the built-in /compact: compacts older conversation history. The harness calls its summarizer, so this may spend tokens',
+        busy: 'compacting…', compacted: '✓ compacted', nothing: '✓ nothing to compact', done: '✓ done',
+        failed: '✕ failed', unknown: '✕ /compact unavailable', noChannel: '✕ command channel unavailable',
+      },
     },
     zh: {
       band: ['正常', '注意', '偏高', '严重'],
@@ -159,6 +168,12 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         tip: '交接：生成本会话摘要，并新建会话将其放入草稿',
         busy: '…', started: '新会话…', inserted: '摘要已插入',
         none: '无数据', noChannel: '新会话通道不可用',
+      },
+      compact: {
+        label: '⇲ 压缩',
+        tip: '运行内置 /compact：压缩较早的会话历史。harness 会调用摘要模型，可能消耗 token',
+        busy: '压缩中…', compacted: '✓ 已压缩', nothing: '✓ 无可压缩内容', done: '✓ 完成',
+        failed: '✕ 失败', unknown: '✕ /compact 不可用', noChannel: '✕ 命令通道不可用',
       },
     },
     ru: {
@@ -219,6 +234,12 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         busy: '…', started: 'новая сессия…', inserted: 'сводка вставлена',
         none: 'нет данных', noChannel: 'канал новой сессии недоступен',
       },
+      compact: {
+        label: '⇲ сжать',
+        tip: 'Выполнить встроенную /compact: сжать старую историю сессии. Сжимает штатный обработчик harness, поэтому сводка может потратить токены',
+        busy: 'сжимаю…', compacted: '✓ сжато', nothing: '✓ нечего сжимать', done: '✓ готово',
+        failed: '✕ не удалось', unknown: '✕ /compact недоступна', noChannel: '✕ канал команд недоступен',
+      },
     },
   }
 
@@ -273,6 +294,12 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
 
   /** ctx.uiWorkspace, поставленный в apply: единственный путь открытия сессии. */
   var newSessionService = null
+
+  /** Сервис remote.commands, полученный через ctx.inject: только он умеет execute. */
+  var compactCommands = null
+
+  /** Один таймер на кнопку compact: новый клик не должен гаситься старым. */
+  var compactResetTimer = null
 
   function fmtTok(n) {
     if (!Number.isFinite(n)) return '—'
@@ -590,6 +617,99 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     return h('span', { style: { position: 'relative', display: 'inline-flex', alignItems: 'center' } }, chip, panel)
   }
 
+  /** remote.commands — отдельный сервис Cordis (`remote.commands`), а не
+      свойство сервиса `remote`; поэтому его отдаёт только ctx.inject. */
+  function commandService() {
+    if (compactCommands && typeof compactCommands.execute === 'function') return compactCommands
+    return null
+  }
+
+  function compactErrorText(error) {
+    if (!error) return ''
+    return String(error.message || error)
+  }
+
+  /** Поставить статус кнопки и, если нужно, погасить его через delay мс. */
+  function setCompactState(setState, next, delay) {
+    if (compactResetTimer !== null) {
+      clearTimeout(compactResetTimer)
+      compactResetTimer = null
+    }
+    setState(next)
+    if (delay > 0) {
+      compactResetTimer = setTimeout(function () {
+        compactResetTimer = null
+        setState(null)
+      }, delay)
+    }
+  }
+
+  function CompactButton(props) {
+    var lang = useLang()
+    var M = MESSAGES[lang].compact
+    var st = React.useState(null)
+    var state = st[0]
+    var setState = st[1]
+    var sessionId = props && props.sessionId
+    var busy = !!(state && state.busy)
+
+    var click = React.useCallback(function () {
+      if (busy) return
+      var commands = commandService()
+      if (!commands || !sessionId) {
+        setCompactState(setState, { text: M.noChannel, tip: M.tip }, 8000)
+        return
+      }
+      setCompactState(setState, { text: M.busy, tip: M.tip, busy: true }, 0)
+      var pending
+      try {
+        pending = commands.execute(sessionId, '/compact', [])
+      } catch (error) {
+        setCompactState(setState, { text: M.failed, tip: compactErrorText(error) || M.tip }, 8000)
+        return
+      }
+      Promise.resolve(pending).then(function (reply) {
+        if (!reply || reply.ok !== true) {
+          var reason = reply && reply.error ? (reply.error.message || reply.error.code) : ''
+          setCompactState(setState, { text: M.failed, tip: compactErrorText(reason) || M.tip }, 8000)
+          return
+        }
+        /* value === undefined: хост не знает такой команды (старая сборка). */
+        if (reply.value === undefined) {
+          setCompactState(setState, { text: M.unknown, tip: M.tip }, 8000)
+          return
+        }
+        var outcome = reply.value.result || {}
+        if (outcome.kind === 'success') {
+          /* Тексты штатной /compact: «Compacted N …» или «No compactable
+             history yet.». Не узнали — честное «готово», а не «сжато». */
+          var hostText = String(outcome.text || '')
+          var shown = M.done
+          if (/^Compacted\b/i.test(hostText)) shown = M.compacted
+          else if (/no compactable history/i.test(hostText)) shown = M.nothing
+          setCompactState(setState, { text: shown, tip: hostText || M.tip }, 5000)
+        } else {
+          setCompactState(setState, { text: M.failed, tip: outcome.text || M.tip }, 8000)
+        }
+      }, function (error) {
+        setCompactState(setState, { text: M.failed, tip: compactErrorText(error) || M.tip }, 8000)
+      })
+    }, [sessionId, lang, busy])
+
+    return h('button', {
+      type: 'button',
+      onClick: click,
+      disabled: busy,
+      title: state && state.tip ? state.tip : M.tip,
+      style: {
+        display: 'inline-flex', alignItems: 'center', gap: '4px',
+        padding: '2px 8px', borderRadius: '999px', cursor: busy ? 'default' : 'pointer', opacity: busy ? '0.7' : '1',
+        border: '1px solid var(--dsw-alias-separator, #374151)', background: 'transparent',
+        color: 'var(--dsw-alias-label-secondary, #9ca3af)', fontSize: '11px', lineHeight: '16px', whiteSpace: 'nowrap',
+      },
+    }, h('span', null, M.label), state ? h('span', { style: { marginLeft: '4px' } }, state.text) : null)
+  }
+
   function HandoffButton(props) {
     var lang = useLang()
     var M = MESSAGES[lang]
@@ -665,6 +785,28 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         Governor,
       )
     })
+
+    /* Кнопка compact живёт в отдельном дочернем плагине: без remote.commands
+       чип и handoff всё равно должны загрузиться, а кнопка просто не появится. */
+    if (typeof ctx.inject === 'function') {
+      ctx.inject(['remote', 'remote.commands'], function (scope) {
+        try {
+          compactCommands = typeof scope.get === 'function' ? scope.get('remote.commands') : undefined
+          if (!compactCommands && scope.remote) compactCommands = scope.remote.commands
+        } catch (error) {
+          compactCommands = null
+        }
+        scope.slots.inject('conversation.input.right', function () {
+          return scope.slots.register(
+            { name: 'conversation.input.right', id: 'context-governor-compact', order: 89 },
+            function (props) {
+              var p = props || {}
+              return h(CompactButton, { sessionId: p.sessionId })
+            },
+          )
+        })
+      })
+    }
 
     ctx.slots.inject('conversation.input.right', function () {
       return ctx.slots.register(

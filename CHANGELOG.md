@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.5
+
+- New **compact** button in the composer, next to handoff. It runs the built-in
+  `/compact` through `ctx.remote.commands.execute(sessionId, '/compact', [])`,
+  so the user gets exactly the harness command — the same durable
+  `command/run` / `command/done` records and the same result node as typing it —
+  not a private reimplementation and not a second compaction path. The host half
+  needs no change: the command is already registered in DSH. `remote.commands`
+  is a separate Cordis service (the `remote` service only associates it), so the
+  button is mounted by a child `ctx.inject(['remote', 'remote.commands'])`
+  plugin; the chip and handoff still load when that service is absent.
+- The button is honest about what it is doing. It disables itself and shows
+  `compacting…` while the request is in flight, confirms success in the UI
+  language, and on a failure shows the host's own reason (busy, cancelled,
+  changed history, no useful summary) in the tooltip. A host without the command
+  or without the command channel says so instead of pretending it worked.
+- This is the one place where tokens can be spent, and only on a click: the
+  plugin still makes no model calls of its own, but `/compact` asks the harness
+  summarizer to write the summary. All three READMEs now say this next to the
+  "no tokens" promise instead of leaving it as a silent exception.
+- The smoke suite clicks the real component against a stub Remote: it pins the
+  `/compact` line, the session id, the empty attachment list, the busy state,
+  the localized success, the "nothing to compact" answer, a refused remote
+  call and a handler error result (132 checks).
+
 ## 0.3.4
 
 - DSH 0.2.1-rc.3 support declared — that is the newest release (published

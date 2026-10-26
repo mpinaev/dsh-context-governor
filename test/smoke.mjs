@@ -113,13 +113,86 @@ function clientRender(source, payload, lang) {
       throw new Error('client render: unexpected require ' + name)
     })
     const registered = []
-    mod.apply({ slots: { inject: (name, callback) => callback(), register: (spec, component) => { registered.push(component); return () => {} } } })
+    const slots = { inject: (name, callback) => callback(), register: (spec, component) => { registered.push(component); return () => {} } }
+    mod.apply({
+      slots,
+      inject: (deps, callback) => callback({ slots, remote: { commands: { execute() {} } } }),
+    })
     queue = [lang, payload, true]
     return flattenText(registered[0]({ sessionId: 'sess' }), []).join(' | ')
   } finally {
     if (previous === undefined) delete globalThis.window
     else globalThis.window = previous
   }
+}
+
+/** Поднять клиентский бандл с записью слотов и перехватом setState: так
+    проверяется настоящий клик по кнопке, а не наличие строки в исходнике. */
+function clientHarness(source, remote, lang) {
+  let factory
+  const queue = [lang]
+  const updates = []
+  const react = {
+    createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat() }),
+    useState: (initial) => {
+      const value = queue.length > 0 ? queue.shift() : (typeof initial === 'function' ? initial() : initial)
+      return [value, (next) => { updates.push(next) }]
+    },
+    useEffect: () => {},
+    useCallback: (fn) => fn,
+  }
+  const previous = globalThis.window
+  globalThis.window = {
+    __ModuleLoader__: { load: ({ factory: captured }) => { factory = captured } },
+    localStorage: { getItem: () => null, setItem() {} },
+  }
+  try {
+    new Function(source)() // eslint-disable-line no-new-func
+    const mod = factory((name) => {
+      if (name === 'react') return react
+      throw new Error('client harness: unexpected require ' + name)
+    })
+    const registered = []
+    const slots = {
+      inject: (name, callback) => callback(),
+      register: (spec, component) => { registered.push({ spec, component }); return () => {} },
+    }
+    /* Верхний ctx намеренно НЕ отдаёт remote: настоящий сервис приходит только
+       через inject, и тест должен ловить попытку читать его напрямую. */
+    const ctx = {
+      slots,
+      inject: (deps, callback) => callback({
+        slots,
+        remote: remote || undefined,
+        get: (name) => name === 'remote.commands' ? (remote ? remote.commands : undefined) : name === 'remote' ? remote : undefined,
+      }),
+    }
+    mod.apply(ctx)
+    return { registered, updates, ctx }
+  } finally {
+    if (previous === undefined) delete globalThis.window
+    else globalThis.window = previous
+  }
+}
+
+/** Клик по compact без живых таймеров: браузерный setTimeout подменяется
+    записью, промисы докручиваются вручную. */
+async function clickCompact(source, remote, lang) {
+  const harness = clientHarness(source, remote, lang)
+  const entry = harness.registered.find((r) => r.spec.id === 'context-governor-compact')
+  /* Слот отдаёт обёртку вида h(CompactButton, props); разворачиваем один уровень. */
+  const rendered = entry ? entry.component({ sessionId: 'sess-compact' }) : null
+  const button = rendered && typeof rendered.type === 'function' ? rendered.type(rendered.props) : rendered
+  const realSetTimeout = globalThis.setTimeout
+  const scheduled = []
+  globalThis.setTimeout = (fn, ms) => { scheduled.push(ms); return scheduled.length }
+  try {
+    if (button) button.props.onClick()
+    for (let i = 0; i < 4; i += 1) await Promise.resolve()
+  } finally {
+    globalThis.setTimeout = realSetTimeout
+  }
+  return { harness, entry, button, scheduled }
 }
 
 /** Ответ /api/status: значения по умолчанию — не-DeepSeek провайдер без ставок. */
@@ -222,7 +295,7 @@ async function main() {
 
   console.log('manifest')
   eq('name', mod.name, 'dsh-context-governor')
-  eq('version', manifest.version, '0.3.4')
+  eq('version', manifest.version, '0.3.5')
   eq('not private', manifest.private, undefined)
   eq('bundle patch declared', manifest.dsh.bundle.patch, './cordis.patch.yml')
   /* DSH 0.2.1 prefers engines.dsh and ignores the peers once it is present, so
@@ -657,6 +730,61 @@ async function main() {
       .concat(missingKeys(messages[lang], messages.en, ''))
     ok('i18n ' + lang + ' has the same keys as en', diff.length === 0, 'differs: ' + diff.join(', '))
   }
+
+  /* Кнопка compact — настоящий клик: проверяем, что она зовёт штатную команду
+     harness, показывает занятость и не выдаёт успех за ошибку. */
+  console.log('compact button')
+  const compactRu = messages.ru.compact
+  const compactCalls = []
+  const okClick = await clickCompact(clientSource, {
+    commands: {
+      execute: (...args) => {
+        compactCalls.push(args)
+        return Promise.resolve({ ok: true, value: { result: { kind: 'success', text: 'Compacted 3 history items (~42 tokens).' } } })
+      },
+    },
+  }, 'ru')
+  ok('compact is registered in the composer', !!okClick.entry && okClick.entry.spec.order === 89)
+  ok('compact renders its localized label',
+    flattenText(okClick.button, []).join(' ').includes(compactRu.label), flattenText(okClick.button, []).join(' '))
+  ok('compact runs the built-in /compact for this session',
+    compactCalls.length === 1 && compactCalls[0][0] === 'sess-compact' && compactCalls[0][1] === '/compact' &&
+      Array.isArray(compactCalls[0][2]) && compactCalls[0][2].length === 0,
+    JSON.stringify(compactCalls))
+  ok('compact shows a busy state first',
+    okClick.harness.updates[0] && okClick.harness.updates[0].busy === true, JSON.stringify(okClick.harness.updates))
+  const compactDone = okClick.harness.updates[okClick.harness.updates.length - 1]
+  ok('compact confirms success in the UI language',
+    compactDone && compactDone.text === compactRu.compacted && String(compactDone.tip).includes('Compacted 3'),
+    JSON.stringify(okClick.harness.updates))
+
+  const emptyClick = await clickCompact(clientSource, {
+    commands: { execute: () => Promise.resolve({ ok: true, value: { result: { kind: 'success', text: 'No compactable history yet.' } } }) },
+  }, 'ru')
+  const emptyDone = emptyClick.harness.updates[emptyClick.harness.updates.length - 1]
+  ok('compact says when there is nothing to compact',
+    emptyDone && emptyDone.text === compactRu.nothing, JSON.stringify(emptyDone))
+
+  const refusedClick = await clickCompact(clientSource, {
+    commands: { execute: () => Promise.resolve({ ok: false, error: { code: 'refused', message: 'compaction is busy' } }) },
+  }, 'en')
+  const refused = refusedClick.harness.updates[refusedClick.harness.updates.length - 1]
+  ok('compact reports a refused command',
+    refused && refused.text === messages.en.compact.failed && refused.tip === 'compaction is busy', JSON.stringify(refused))
+
+  const handlerErrorClick = await clickCompact(clientSource, {
+    commands: { execute: () => Promise.resolve({ ok: true, value: { result: { kind: 'error', text: 'Compaction is unavailable because this process has an active compaction.' } } }) },
+  }, 'en')
+  const handlerError = handlerErrorClick.harness.updates[handlerErrorClick.harness.updates.length - 1]
+  ok('compact shows the handler error text',
+    handlerError && handlerError.text === messages.en.compact.failed &&
+      String(handlerError.tip).includes('active compaction'), JSON.stringify(handlerError))
+
+  const noChannelClick = await clickCompact(clientSource, null, 'zh')
+  ok('compact without a command channel says so',
+    noChannelClick.harness.updates[0] && noChannelClick.harness.updates[0].text === messages.zh.compact.noChannel,
+    JSON.stringify(noChannelClick.harness.updates))
+
 
   /* Цена — только там, где плагин знает ставки: на не-DeepSeek провайдере её нет
      ни в чипе, ни в панели, ни в подсказке, и множитель тарифа тоже не показываем. */
