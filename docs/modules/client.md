@@ -1,7 +1,6 @@
 ---
 sources:
   - client.js
-  - package.json
 ---
 
 # Клиентская половина

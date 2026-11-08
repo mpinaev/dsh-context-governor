@@ -29,6 +29,9 @@ Feature commit: `a4622a5`.
   composer dock rather than the tok/s row. Module cards for the host and client
   halves live under `docs/modules/` with `sources:` headers; the dated session
   index is out of `docs/`.
+- The module cards' `sources:` headers no longer list `package.json`: the cards
+  describe `index.js`, `cordis.patch.yml` and `client.js`, and the manifest carries
+  release metadata only, so a version bump does not change what the cards say.
 
 ## 0.3.5
 

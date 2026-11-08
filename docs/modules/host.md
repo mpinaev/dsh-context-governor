@@ -2,7 +2,6 @@
 sources:
   - index.js
   - cordis.patch.yml
-  - package.json
 ---
 
 # Хост-половина
