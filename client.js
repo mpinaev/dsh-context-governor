@@ -8,6 +8,8 @@
 // 3) Кнопка compact рядом с handoff: один клик выполняет встроенную команду
 //    harness /compact через ctx.remote.commands.execute. Плагин модель не зовёт;
 //    сжимает штатный обработчик, поэтому сводка может стоить токенов.
+// 4) Кнопка места в панели чипа: переставляет бейдж по кругу между шапкой
+//    сессии, строкой под полем ввода и низом сайдбара; выбор запоминается.
 //
 // Язык интерфейса: en (по умолчанию), zh, ru. Переключается маленькой кнопкой
 // в панели чипа и запоминается в localStorage. Хост-роуты закрыты служебным
@@ -38,6 +40,10 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
   var LANG_KEY = 'dsh-context-governor.lang'
   var LANG_CODE = { en: 'EN', zh: '中文', ru: 'RU' }
   var LANG_NAME = { en: 'English', zh: '中文', ru: 'Русский' }
+
+  /** Где стоит бейдж: шапка сессии, строка под полем ввода или низ сайдбара. */
+  var PLACES = ['header', 'composer', 'sidebar']
+  var PLACE_KEY = 'dsh-context-governor.place'
   var WEEKDAYS = {
     en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
     zh: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
@@ -89,6 +95,8 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       },
       kidsHeader: function (n, tokens) { return 'Child sessions (' + n + ', another ' + fmtTok(tokens) + ')' },
       langTip: function (cur, next) { return 'Language: ' + cur + ' → ' + next },
+      place: { header: 'session header', composer: 'under the prompt', sidebar: 'sidebar footer' },
+      placeTip: function (from, to) { return 'Badge: ' + from + '. Click to move it: ' + to },
       warnings: {
         cacheHitLow: function (w) { return 'cache-hit ' + w.pct + '% stays below ' + w.floor + '%: input is paid as fresh' },
         coldPrefill: function (w) { return 'cold prefill ' + w.fresh + ' fresh tokens' + (w.usd != null ? ' (≈$' + w.usd + ')' : '') },
@@ -154,6 +162,8 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       },
       kidsHeader: function (n, tokens) { return '子会话（' + n + ' 个，另占 ' + fmtTok(tokens) + '）' },
       langTip: function (cur, next) { return '语言：' + cur + ' → ' + next },
+      place: { header: '会话顶部', composer: '输入框下方', sidebar: '侧边栏底部' },
+      placeTip: function (from, to) { return '胶囊：' + from + '。点击移到：' + to },
       warnings: {
         cacheHitLow: function (w) { return '缓存命中 ' + w.pct + '% 持续低于 ' + w.floor + '%：输入按新输入计价' },
         coldPrefill: function (w) { return '冷预填 ' + w.fresh + ' 个新 token' + (w.usd != null ? '（约 $' + w.usd + '）' : '') },
@@ -219,6 +229,8 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       },
       kidsHeader: function (n, tokens) { return 'Дочерние сессии (' + n + ', ещё ' + fmtTok(tokens) + ')' },
       langTip: function (cur, next) { return 'Язык: ' + cur + ' → ' + next },
+      place: { header: 'шапка сессии', composer: 'под полем ввода', sidebar: 'низ сайдбара' },
+      placeTip: function (from, to) { return 'Бейдж: ' + from + '. Нажмите — переставится: ' + to },
       warnings: {
         cacheHitLow: function (w) { return 'cache-hit ' + w.pct + '% — держится ниже ' + w.floor + '%: вход переплачивается как свежий' },
         coldPrefill: function (w) { return 'холодный префилл ' + w.fresh + ' свежих токенов' + (w.usd != null ? ' (≈$' + w.usd + ')' : '') },
@@ -287,6 +299,73 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
 
   function nextLang() {
     return LANGS[(LANGS.indexOf(currentLang) + 1) % LANGS.length]
+  }
+
+  function readPlace() {
+    try {
+      var saved = window.localStorage.getItem(PLACE_KEY)
+      if (PLACES.indexOf(saved) !== -1) return saved
+    } catch (error) { /* localStorage недоступен — бейдж остаётся в шапке */ }
+    return 'header'
+  }
+
+  function writePlace(place) {
+    try { window.localStorage.setItem(PLACE_KEY, place) } catch (error) { /* не критично */ }
+  }
+
+  var currentPlace = readPlace()
+  var placeListeners = []
+
+  /** Переставить бейдж. Смена места видна во всех точках сразу: каждый слот
+      держит свою подписку, а рендерится только совпавший с местом. */
+  function setPlace(place) {
+    if (PLACES.indexOf(place) === -1 || place === currentPlace) return
+    currentPlace = place
+    writePlace(place)
+    for (var i = 0; i < placeListeners.length; i++) placeListeners[i](place)
+  }
+
+  /** Текущее место бейджа как React-состояние. */
+  function usePlace() {
+    var s = React.useState(currentPlace)
+    React.useEffect(function () {
+      var fn = function (value) { s[1](value) }
+      placeListeners.push(fn)
+      return function () {
+        var index = placeListeners.indexOf(fn)
+        if (index !== -1) placeListeners.splice(index, 1)
+      }
+    }, [])
+    return s[0]
+  }
+
+  function nextPlace() {
+    return PLACES[(PLACES.indexOf(currentPlace) + 1) % PLACES.length]
+  }
+
+  /** Сессия для бейджа вне session-слота: сайдбар получает только wide/false,
+      поэтому id запоминает любой session-scoped рендер чипа (шапка/композер). */
+  var currentSession = null
+  var sessionListeners = []
+
+  function noteSession(id) {
+    if (!id || id === currentSession) return
+    currentSession = id
+    for (var i = 0; i < sessionListeners.length; i++) sessionListeners[i](id)
+  }
+
+  function useTrackedSession() {
+    var s = React.useState(currentSession)
+    React.useEffect(function () {
+      var fn = function (value) { s[1](value) }
+      sessionListeners.push(fn)
+      if (currentSession !== s[0]) s[1](currentSession)
+      return function () {
+        var index = sessionListeners.indexOf(fn)
+        if (index !== -1) sessionListeners.splice(index, 1)
+      }
+    }, [])
+    return s[0]
   }
 
   /** Ожидающий текст для новой сессии (модульный, не React-состояние). */
@@ -453,7 +532,9 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
   }
 
   function Governor(props) {
-    var sid = props && props.sessionId
+    /* shownIn — слот, в который бейдж зарегистрирован. Видимый один: тот,
+       что совпал с сохранённым местом (кнопка места в панели). */
+    var shownIn = (props && props.place) || 'header'
     var lang = useLang()
     var M = MESSAGES[lang]
     var s = React.useState(null)
@@ -462,6 +543,17 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     var o = React.useState(false)
     var open = o[0]
     var setOpen = o[1]
+    var placeState = usePlace()
+    var tracked = useTrackedSession()
+    var sid = (props && props.sessionId) || tracked
+    /* В слоте сайдбара sessionId не приходит: id запоминает любой
+       session-scoped рендер чипа (шапка или композер). */
+    React.useEffect(function () { noteSession(props && props.sessionId) }, [props && props.sessionId])
+
+    var place = PLACES.indexOf(placeState) !== -1 ? placeState : 'header'
+    var hidden = place !== shownIn
+    var wide = !(props && props.wide === false)
+    var iconOnly = shownIn === 'sidebar' && !wide
 
     var load = React.useCallback(function (force) {
       fetchStatus(sid, force === true).then(function (payload) {
@@ -471,10 +563,14 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     }, [sid])
 
     React.useEffect(function () {
+      /* Спрятанный бейдж не должен опрашивать статус: работает только видимый. */
+      if (hidden || !sid) return undefined
       load()
       var timer = setInterval(function () { load(false) }, 5000)
       return function () { clearInterval(timer) }
-    }, [load])
+    }, [load, hidden, sid])
+
+    if (hidden) return null
 
     var cur = data && data.current ? data.current : null
     var cfgInfo = (data && data.config) || {}
@@ -502,7 +598,8 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     var balText = fmtMoney(bal) + otherBalanceText(bal)
     var labelParts = cur ? [M.ctx + ' ' + fmtTok(cur.prompt)] : []
     if (cur && showPrice) labelParts.push(costText)
-    if (cur && cachedProvider) labelParts.push(cacheHitLabel(cur, M))
+    /* В сайдбаре cache-hit уже виден в штатной строке статуса — не дублируем. */
+    if (cur && cachedProvider && shownIn !== 'sidebar') labelParts.push(cacheHitLabel(cur, M))
     var label = cur ? labelParts.join(' · ') + kidsNote : M.ctx + ' ' + M.dash
     var tipParts = cur
       ? [
@@ -520,20 +617,34 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     if (season) tipParts.push(seasonTitleText(season, M, lang))
     if (bal) tipParts.push(balanceTipText(bal, M))
 
-    var chip = h('button', {
-      type: 'button',
-      title: cur ? tipParts.join(', ') : M.noData,
-      onClick: function () { setOpen(!open) },
-      style: {
-        display: 'inline-flex', alignItems: 'center', gap: '5px',
-        padding: '2px 8px', borderRadius: '999px', cursor: 'pointer',
-        border: '1px solid ' + color, background: 'transparent',
-        color: color, fontSize: '11px', lineHeight: '16px', whiteSpace: 'nowrap',
-      },
-    }, h('span', { style: { fontSize: '10px' } }, band >= 2 ? '⚠' : '◐'),
-      h('span', null, label),
-      balText ? h('span', { title: balanceTipText(bal, M), style: { color: peakColor || BAND_COLOR[0] } }, ' · ' + balText) : null,
-      seasonText ? h('span', { title: seasonTitleText(season, M, lang), style: { color: season.color, fontWeight: 600 } }, ' · ' + seasonText) : null)
+    var chipTitle = cur ? tipParts.join(', ') : M.noData
+    /* Свёрнутый сайдбар — узкая рейка: вместо плашки рисуем иконку. */
+    var chip = iconOnly
+      ? h('button', {
+          type: 'button',
+          title: chipTitle,
+          onClick: function () { setOpen(!open) },
+          style: {
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: '26px', height: '26px', padding: 0, borderRadius: '8px', cursor: 'pointer',
+            border: '1px solid ' + color, background: 'transparent',
+            color: color, fontSize: '12px', lineHeight: '1',
+          },
+        }, band >= 2 ? '⚠' : '◐')
+      : h('button', {
+          type: 'button',
+          title: chipTitle,
+          onClick: function () { setOpen(!open) },
+          style: {
+            display: 'inline-flex', alignItems: 'center', gap: '5px',
+            padding: '2px 8px', borderRadius: '999px', cursor: 'pointer',
+            border: '1px solid ' + color, background: 'transparent',
+            color: color, fontSize: '11px', lineHeight: '16px', whiteSpace: 'nowrap',
+          },
+        }, h('span', { style: { fontSize: '10px' } }, band >= 2 ? '⚠' : '◐'),
+          h('span', null, label),
+          balText ? h('span', { title: balanceTipText(bal, M), style: { color: peakColor || BAND_COLOR[0] } }, ' · ' + balText) : null,
+          seasonText ? h('span', { title: seasonTitleText(season, M, lang), style: { color: season.color, fontWeight: 600 } }, ' · ' + seasonText) : null)
 
     var panel = null
     if (open) {
@@ -573,14 +684,21 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
           h('span', { style: { color: BAND_COLOR[0] } }, kid.session.slice(-8)),
           h('span', null, kid.prompt === null ? M.dash : fmtTok(kid.prompt)))
       })
-      panel = h('div', {
-        style: {
-          position: 'absolute', top: '26px', right: 0, zIndex: 40, minWidth: '280px',
-          background: 'var(--dsw-alias-bg-layer-1, #1f2430)', color: 'var(--dsw-alias-label-primary, #e5e7eb)',
-          border: '1px solid var(--dsw-alias-separator, #374151)', borderRadius: '8px',
-          padding: '10px 12px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,.35)',
-        },
-      },
+      var panelStyle = {
+        position: 'absolute', zIndex: 40, minWidth: '280px',
+        background: 'var(--dsw-alias-bg-layer-1, #1f2430)', color: 'var(--dsw-alias-label-primary, #e5e7eb)',
+        border: '1px solid var(--dsw-alias-separator, #374151)', borderRadius: '8px',
+        padding: '10px 12px', fontSize: '12px', boxShadow: '0 8px 24px rgba(0,0,0,.35)',
+      }
+      /* В композере и сайдбаре панель открывается вверх: внизу её срезал бы край. */
+      if (shownIn === 'composer' || shownIn === 'sidebar') {
+        panelStyle.bottom = '26px'
+        panelStyle.left = '0'
+      } else {
+        panelStyle.top = '26px'
+        panelStyle.right = 0
+      }
+      panel = h('div', { style: panelStyle },
         h('div', { style: { fontWeight: 600, marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' } },
           h('span', null, M.panelTitle),
           h('span', { style: { display: 'inline-flex', gap: '6px', alignItems: 'center' } },
@@ -595,7 +713,13 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
               title: M.langTip(LANG_NAME[lang], LANG_NAME[nextLang()]),
               onClick: function (event) { event.stopPropagation(); setLang(nextLang()) },
               style: smallButtonStyle(),
-            }, LANG_CODE[lang]))),
+            }, LANG_CODE[lang]),
+            h('button', {
+              type: 'button',
+              title: M.placeTip(M.place[place], M.place[nextPlace()]),
+              onClick: function (event) { event.stopPropagation(); setPlace(nextPlace()) },
+              style: smallButtonStyle(),
+            }, '⇄'))),
         rows.map(function (row) {
           return h('div', { key: row[0], style: { display: 'flex', justifyContent: 'space-between', gap: '16px' } },
             h('span', { style: { color: BAND_COLOR[0] } }, row[0]),
@@ -782,7 +906,32 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     ctx.slots.inject('conversation.session.header.utilities', function () {
       return ctx.slots.register(
         { name: 'conversation.session.header.utilities', id: 'context-governor', order: 30 },
-        Governor,
+        function (props) {
+          var p = props || {}
+          return h(Governor, { sessionId: p.sessionId, place: 'header' })
+        },
+      )
+    })
+
+    /* Бейдж можно переставить под поле ввода и в низ сайдбара. Рендерится
+       только слот, совпавший с сохранённым местом; остальные отдают null. */
+    ctx.slots.inject('conversation.composer.dock', function () {
+      return ctx.slots.register(
+        { name: 'conversation.composer.dock', id: 'context-governor-composer', order: 20 },
+        function (props) {
+          var p = props || {}
+          return h(Governor, { sessionId: p.sessionId, place: 'composer' })
+        },
+      )
+    })
+
+    ctx.slots.inject('sidebar.footer.action', function () {
+      return ctx.slots.register(
+        { name: 'sidebar.footer.action', id: 'context-governor-sidebar', order: 20 },
+        function (props) {
+          var p = props || {}
+          return h(Governor, { place: 'sidebar', wide: p.wide })
+        },
       )
     })
 

@@ -17,7 +17,8 @@ the compact button, which asks the harness to run `/compact` when you click it.
 ## What it looks like
 
 The chip in the session header opens the panel below. The same panel is available
-in English, Chinese and Russian:
+in English, Chinese and Russian; the ⇄ button in the panel header moves the chip to
+the composer dock or the sidebar foot (see [Badge placement](#badge-placement)):
 
 | English | 中文 | Русский |
 |---|---|---|
@@ -104,7 +105,7 @@ are missing, the plugin is probably disabled, and `dsh --dump-config` will say s
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 132 assertions: no network, no model calls
+npm test                     # 142 assertions: no network, no model calls
 ./scripts/compat-check.sh    # boots a spare instance on 3099 and asks its API
 dsh plugin --profile web add "link:$PWD"
 ```
@@ -193,7 +194,8 @@ know). The chip/balance logic is therefore:
 
 - a server log entry when a session enters a band, on a cold prefill and on an
   expensive step;
-- a client chip in the session header, coloured by band, with a details panel;
+- a client chip coloured by band, with a details panel; it sits in the session
+  header by default and can be moved to the composer dock or the sidebar foot;
 - on the chip: the balance and, for a provider that follows DeepSeek's schedule,
   the tariff marker (peak / off-peak with countdown).
 
@@ -315,6 +317,22 @@ language of the document the handoff button inserts into the new session: the
 client passes `lang` to `/api/handoff`. The host returns data without text
 (band, tariff and warnings are codes), so switching the language needs no data
 refetch.
+
+## Badge placement
+
+By default the chip stays in the session header. The ⇄ button in the panel
+header, next to the language switch, moves it round-robin between three places:
+
+- the session header;
+- the dock under the composer (the row where tok/s and cache-hit live);
+- the foot of the left sidebar, just above the settings and account row.
+
+Only one copy renders at a time, and the choice is remembered in the browser
+(`localStorage: dsh-context-governor.place`) so a reload keeps it. The panel opens
+downward in the header and upward in the composer and the sidebar, where there is
+no room below. In the sidebar the chip drops the cache-hit segment (the standard
+status row already shows it); when the sidebar is collapsed to the icon rail, the
+chip becomes a single band-coloured icon that opens the same panel.
 
 ## Thresholds
 

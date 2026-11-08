@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0
+
+- The chip can now be moved with the **⇄** button in the panel header, next to the
+  language switch: it cycles through the session header (default), the dock under
+  the composer, and the foot of the sidebar just above the settings/account row.
+  Only the matching slot renders, so the chip stays a single copy; the choice is
+  remembered in the browser (`localStorage: dsh-context-governor.place`), so a
+  reload keeps it where it was put.
+- The panel opens in the free direction: downward in the header, upward in the
+  composer and in the sidebar. The hidden slots do not poll `/api/status`, so the
+  move costs no extra requests.
+- In the sidebar the chip drops the cache-hit segment, because the standard status
+  row already shows cache hit; the panel keeps the cache rows. When the sidebar is
+  collapsed to the icon rail, the chip becomes a single band-coloured icon that
+  opens the same panel.
+- The smoke suite pins all of it: three slot registrations, one visible copy, the
+  remembered place and its full cycle, the sidebar chip without cache-hit, the icon
+  in the collapsed sidebar, and the localized tooltip (142 assertions).
+
 ## 0.3.5
 
 - New **compact** button in the composer, next to handoff. It runs the built-in

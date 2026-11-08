@@ -90,11 +90,20 @@ function flattenText(node, out) {
   return out
 }
 
-/** Поднять клиентский бандл с заглушкой React и отрисовать чип с панелью:
-    проверяется то, что реально попадает в интерфейс, а не исходник. */
-function clientRender(source, payload, lang) {
+const SLOT_IDS = {
+  header: 'context-governor',
+  composer: 'context-governor-composer',
+  sidebar: 'context-governor-sidebar',
+}
+
+/** Поднять клиентский бандл с заглушкой React и отрисовать один слот бейджа:
+    проверяется то, что реально попадает в интерфейс, а не исходник.
+    options.slot — header/composer/sidebar, options.place — сохранённое место
+    бейджа в localStorage, options.wide — ширина сайдбара (false = рейка). */
+function clientTree(source, payload, lang, options = {}) {
   let factory
   let queue = []
+  const stored = {}
   const react = {
     createElement: (type, props, ...children) => ({ type, props: props || {}, children: children.flat() }),
     useState: (initial) => [queue.length > 0 ? queue.shift() : (typeof initial === 'function' ? initial() : initial), () => {}],
@@ -104,7 +113,10 @@ function clientRender(source, payload, lang) {
   const previous = globalThis.window
   globalThis.window = {
     __ModuleLoader__: { load: ({ factory: captured }) => { factory = captured } },
-    localStorage: { getItem: () => null, setItem() {} },
+    localStorage: {
+      getItem: (key) => key === 'dsh-context-governor.place' ? (options.place === undefined ? null : options.place) : null,
+      setItem: (key, value) => { stored[key] = value },
+    },
   }
   try {
     new Function(source)() // eslint-disable-line no-new-func
@@ -113,17 +125,52 @@ function clientRender(source, payload, lang) {
       throw new Error('client render: unexpected require ' + name)
     })
     const registered = []
-    const slots = { inject: (name, callback) => callback(), register: (spec, component) => { registered.push(component); return () => {} } }
+    const slots = { inject: (name, callback) => callback(), register: (spec, component) => { registered.push({ spec, component }); return () => {} } }
     mod.apply({
       slots,
       inject: (deps, callback) => callback({ slots, remote: { commands: { execute() {} } } }),
     })
     queue = [lang, payload, true]
-    return flattenText(registered[0]({ sessionId: 'sess' }), []).join(' | ')
+    const entry = registered.find((item) => item.spec.id === SLOT_IDS[options.slot || 'header'])
+    let node = entry ? entry.component({ sessionId: 'sess', wide: options.wide !== false }) : null
+    /* Слот отдаёт обёртку вида h(Governor, props); разворачиваем один уровень. */
+    if (node && typeof node.type === 'function') node = node.type(node.props)
+    /* Клики делаются до восстановления window: setPlace пишет в localStorage. */
+    for (let i = 0; i < (options.clicks || 0); i += 1) {
+      const button = findButton(node, '⇄')
+      if (button) button.props.onClick({ stopPropagation() {} })
+    }
+    return { node, stored, registered }
   } finally {
     if (previous === undefined) delete globalThis.window
     else globalThis.window = previous
   }
+}
+
+/** Текст, который слот реально показывает (для старых проверок панели). */
+function clientRender(source, payload, lang, options) {
+  return flattenText(clientTree(source, payload, lang, options).node, []).join(' | ')
+}
+
+/** Первая кнопка в дереве (или первая, в чьём тексте есть marker). */
+function findButton(node, marker) {
+  if (!node || typeof node !== 'object') return null
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findButton(item, marker)
+      if (found) return found
+    }
+    return null
+  }
+  if (node.type === 'button') {
+    const text = flattenText(node.children, []).join('')
+    if (marker === undefined || text.includes(marker)) return node
+  }
+  for (const child of node.children || []) {
+    const found = findButton(child, marker)
+    if (found) return found
+  }
+  return null
 }
 
 /** Поднять клиентский бандл с записью слотов и перехватом setState: так
@@ -295,7 +342,7 @@ async function main() {
 
   console.log('manifest')
   eq('name', mod.name, 'dsh-context-governor')
-  eq('version', manifest.version, '0.3.5')
+  eq('version', manifest.version, '0.4.0')
   eq('not private', manifest.private, undefined)
   eq('bundle patch declared', manifest.dsh.bundle.patch, './cordis.patch.yml')
   /* DSH 0.2.1 prefers engines.dsh and ignores the peers once it is present, so
@@ -856,6 +903,63 @@ async function main() {
         !cacheless.includes(M.ratesFmt(noCachePayload.rates, true)),
       cacheless)
   }
+
+  console.log('badge placement')
+  /* Все три места зарегистрированы, но рендерится только сохранённое. */
+  const placed = clientTree(clientSource, flatPayload, 'en')
+  const slotIds = placed.registered.map((item) => item.spec.id)
+  ok('the badge is registered in the header, composer and sidebar',
+    slotIds.includes('context-governor') && slotIds.includes('context-governor-composer') &&
+      slotIds.includes('context-governor-sidebar'), slotIds.join(', '))
+
+  const headerShown = clientTree(clientSource, flatPayload, 'en', { slot: 'header' })
+  const composerHidden = clientTree(clientSource, flatPayload, 'en', { slot: 'composer' })
+  ok('the badge renders only in the saved place',
+    flattenText(headerShown.node, []).join(' | ').includes('ctx 1k') && composerHidden.node === null,
+    JSON.stringify(flattenText(composerHidden.node, [])))
+
+  const savedSidebar = clientTree(clientSource, flatPayload, 'en', { slot: 'sidebar', place: 'sidebar', wide: true })
+  ok('a saved sidebar place survives a reload',
+    savedSidebar.node !== null && flattenText(savedSidebar.node, []).join(' | ').includes('ctx 1k'),
+    JSON.stringify(flattenText(savedSidebar.node, [])))
+
+  /* В сайдбаре cache-hit не дублируется: он виден в штатной строке статуса. */
+  const headerChip = findButton(clientTree(clientSource, deepseekPayload, 'en').node, 'ctx')
+  const sidebarChip = findButton(savedSidebar.node, 'ctx')
+  const headerChipText = flattenText(headerChip.children, []).join('')
+  const sidebarChipText = flattenText(sidebarChip.children, []).join('')
+  ok('the sidebar chip drops cache-hit',
+    !sidebarChipText.includes('86%') && headerChipText.includes('86%'), sidebarChipText)
+
+  /* Свёрнутый сайдбар — иконка вместо плашки, клик по ней открывает панель. */
+  const collapsed = clientTree(clientSource, deepseekPayload, 'en', { slot: 'sidebar', place: 'sidebar', wide: false })
+  const collapsedChip = findButton(collapsed.node)
+  const collapsedText = flattenText(collapsedChip.children, []).join('')
+  ok('a collapsed sidebar shows the badge as an icon',
+    collapsedText === '◐' && typeof collapsedChip.props.title === 'string' && collapsedChip.props.title.length > 0,
+    collapsedText + ' / ' + collapsedChip.props.title)
+
+  /* Кнопка места стоит рядом с языком и запоминает следующее место. */
+  const cycling = clientTree(clientSource, deepseekPayload, 'en', { place: 'header' })
+  const placeButton = findButton(cycling.node, '⇄')
+  ok('the place button is next to the language switch',
+    placeButton !== null && placeButton.props.title.includes(messages.en.place.header) &&
+      placeButton.props.title.includes(messages.en.place.composer),
+    placeButton && placeButton.props.title)
+  const firstHop = clientTree(clientSource, deepseekPayload, 'en', { place: 'header', clicks: 1 })
+  ok('the place button stores the next place',
+    firstHop.stored['dsh-context-governor.place'] === 'composer', JSON.stringify(firstHop.stored))
+  const secondHop = clientTree(clientSource, deepseekPayload, 'en', { place: 'header', clicks: 2 })
+  ok('the place button walks header → composer → sidebar',
+    secondHop.stored['dsh-context-governor.place'] === 'sidebar', JSON.stringify(secondHop.stored))
+  const thirdHop = clientTree(clientSource, deepseekPayload, 'en', { place: 'header', clicks: 3 })
+  ok('the place button cycles back to the header',
+    thirdHop.stored['dsh-context-governor.place'] === 'header', JSON.stringify(thirdHop.stored))
+
+  ok('the place tooltip is localized',
+    messages.ru.placeTip(messages.ru.place.header, messages.ru.place.composer).indexOf('Бейдж') !== -1 &&
+      messages.zh.placeTip(messages.zh.place.sidebar, messages.zh.place.header).indexOf('胶囊') !== -1,
+    messages.ru.placeTip(messages.ru.place.header, messages.ru.place.composer))
 
   console.log('')
   console.log(passed + ' passed, ' + failed + ' failed')
