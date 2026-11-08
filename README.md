@@ -47,9 +47,10 @@ and fetches the balance over HTTP.
 - **Nothing is modified on its own.** It does not touch the history, the system
   prompt or the prefix cache, so it cannot affect prompt caching. The compact
   button is an explicit shortcut to the harness command, not a silent edit.
-- **The network is used for the balance only.** The harness account service (when
-  signed in) and `api.deepseek.com/user/balance` are not a model. Plus `git status`
-  on a handoff click, locally.
+- **The network is used for the balance and the holiday calendar only.** The
+  harness account service (when signed in) and `api.deepseek.com/user/balance` are
+  not a model; the Chinese holiday calendar comes from `holidayUrl` (the
+  `chinese-days` data). Plus `git status` on a handoff click, locally.
 
 The compact button is the deliberate exception: it does not summarize anything
 itself, it calls the harness's own `/compact` — the same command you would type.
@@ -92,7 +93,7 @@ the cache buckets, the step cost and the balance provider gate.
 | DSH version | State |
 |---|---|
 | `0.1.7-rc.2` … `<0.2.0` | supported, verified live |
-| `0.2.0-rc.1` … `<0.3.0` | supported; `0.2.1-rc.3` checked against the API, probed weekly by CI |
+| `0.2.0-rc.1` … `<0.3.0` | supported; CI probes the newest published DSH weekly and fails if the version gate disables the plugin |
 
 DSH **disables** the plugin when its declared range does not cover the running
 version. The plugin declares that range in `engines.dsh`, which DSH 0.2.1 and
@@ -120,7 +121,7 @@ Rules and the release flow live in [CONTRIBUTING.md](CONTRIBUTING.md).
   `cacheReadRate/freshRate`, about 0.02 for deepseek-flash);
 - cache-hit over the session totals, % (a partial hit is never rounded up to 100);
 - cold input per step (fresh tokens in the last request);
-- a band: 0 = normal, 1 = warn, 2 = high, 3 = critical;
+- a band: 0 = normal, 1 = attention, 2 = high, 3 = critical;
 - **DeepSeek balance** (numbers only; the key never reaches the client);
 - **peak/off-peak tariff** with a countdown to the switch.
 
@@ -192,8 +193,8 @@ know). The chip/balance logic is therefore:
 
 ## Signals
 
-- a server log entry when a session enters a band, on a cold prefill and on an
-  expensive step;
+- a server log entry when a session enters a band, on an anomalous fresh input and
+  on an expensive step;
 - a client chip coloured by band, with a details panel; it sits in the session
   header by default and can be moved to the composer dock or the sidebar foot;
 - on the chip: the balance and, for a provider that follows DeepSeek's schedule,
@@ -278,8 +279,8 @@ fresh input or a cache miss, and the tariff doubles that difference.
 ## Handoff button
 
 One click: the host assembles a session summary (the first task, the session
-arc — every request and what came of it, the current state, cwd, touched files,
-child sessions), the client opens a **new session in the same workspace** through
+arc — every request and what came of it, the current state, the files touched
+(git status plus tool calls), child sessions), the client opens a **new session in the same workspace** through
 `ctx.uiWorkspace.startSession()` and puts the summary into its draft. There are
 no branches or fallbacks: no Alt+click, no insertion into the current session, no
 clipboard.
@@ -309,8 +310,8 @@ component puts the text into the draft through `inputActions.setDraft`.
 Languages: **en** (default), **zh**, **ru**. The switch is a small button next to
 the refresh control in the chip header: it shows the current code (EN / Chinese /
 RU) and cycles the language. The choice is remembered in the browser
-(`localStorage: dsh-context-governor.lang`) and immediately re-renders both the
-chip and the handoff button.
+(`localStorage: dsh-context-governor.lang`) and immediately re-renders the chip and
+both composer buttons (compact and handoff).
 
 The language covers all interface text (panel labels, warnings, tooltips) and the
 language of the document the handoff button inserts into the new session: the
@@ -324,7 +325,7 @@ By default the chip stays in the session header. The ⇄ button in the panel
 header, next to the language switch, moves it round-robin between three places:
 
 - the session header;
-- the dock under the composer (the row where tok/s and cache-hit live);
+- the dock under the composer (the ambient row where the context meter sits);
 - the foot of the left sidebar, just above the settings and account row.
 
 Only one copy renders at a time, and the choice is remembered in the browser
@@ -368,7 +369,7 @@ window has not been resolved yet, the bands are not invented (there are none) an
 the panel shows a model-window-unknown warning.
 
 In the `context-governor` block of `~/.dsh/profiles/web/cordis.patch.yml` you
-can tune only `bandRatios`, `headroomTokens`, `thresholdRatio`, the default rates
+can tune only `base`, `bandRatios`, `headroomTokens`, `thresholdRatio`, the default rates
 (`freshRate`, `cacheReadRate`, `cacheWriteRate`, `outputRate`,
 `peakMultiplier`), the per-provider overrides (`pricedProviders`,
 `providerRates` — rates, `seasonal`, `cached`, `peakMultiplier`) and the signal thresholds
@@ -382,8 +383,8 @@ adaptivity.
 
 ## Notes
 
-The bands are derived from the model window; the warn/high/critical labels are not
-read back. The plugin measures and never trims: it does not change history or the
+The bands are derived from the model window; the normal/attention/high/critical
+labels are not read back. The plugin measures and never trims: it does not change history or the
 prompt.
 
 ## License

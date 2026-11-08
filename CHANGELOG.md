@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.4.0
+## 08.11.2026 · 0.4.0
+
+Release commit: `a4622a5`.
 
 - The chip can now be moved with the **⇄** button in the panel header, next to the
   language switch: it cycles through the session header (default), the dock under
@@ -18,6 +20,15 @@
 - The smoke suite pins all of it: three slot registrations, one visible copy, the
   remembered place and its full cycle, the sidebar chip without cache-hit, the icon
   in the collapsed sidebar, and the localized tooltip (142 assertions).
+- Documentation audit: the three READMEs now match the code. Band labels use the
+  client's own words (attention, not warn), only band entry and an expensive step
+  are logged (the cold-prefill log line the docs promised is not in the code), the
+  handoff summary lists touched files from git status and tool calls but not cwd,
+  the config list includes `base`, the compatibility row describes the weekly CI
+  probe instead of a past rc build, and the badge-placement text points at the
+  composer dock rather than the tok/s row. Module cards for the host and client
+  halves live under `docs/modules/` with `sources:` headers; the dated session
+  index is out of `docs/`.
 
 ## 0.3.5
 

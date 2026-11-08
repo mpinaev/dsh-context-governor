@@ -39,9 +39,9 @@ harness 执行 `/compact`。
   只有按下压缩按钮时才会消耗 token。
 - **自身不改动任何东西。** 它不碰历史、系统提示词或前缀缓存，因此不会影响 prompt
   缓存。压缩按钮是对 harness 命令的显式调用，不是悄悄修改。
-- **只有余额会用到网络。** harness 账户服务（已登录时）和
-  `api.deepseek.com/user/balance` 都不是模型。另外，点击交接时会在本地执行一次
-  `git status`。
+- **只有余额和节假日日历会用到网络。** harness 账户服务（已登录时）和
+  `api.deepseek.com/user/balance` 都不是模型；中国节假日日历来自 `holidayUrl`
+  （`chinese-days` 数据）。另外，点击交接时会在本地执行一次 `git status`。
 
 压缩按钮是有意保留的例外：它自己不做摘要，而是调用 harness 内置的 `/compact`——
 和你手动输入的是同一条命令。该命令会调用 harness 摘要模型，因此会消耗 token。
@@ -81,7 +81,7 @@ dsh plugin --profile web add github:mpinaev/dsh-context-governor
 | DSH 版本 | 状态 |
 |---|---|
 | `0.1.7-rc.2` … `<0.2.0` | 支持，已在线验证 |
-| `0.2.0-rc.1` … `<0.3.0` | 支持；`0.2.1-rc.3` 已对照 API 核对，CI 每周探测 |
+| `0.2.0-rc.1` … `<0.3.0` | 支持；CI 每周检查最新发布的 DSH，若版本门禁停用插件则失败 |
 
 当声明的范围不覆盖正在运行的版本时，DSH 会**停用**插件。范围声明在 `engines.dsh`
 中：DSH 0.2.1 及以后优先使用该字段，`peerDependencies` 仅作兼容保留；两种匹配都
@@ -108,7 +108,7 @@ dsh plugin --profile web add "link:$PWD"
   `cacheReadRate/freshRate`，对 deepseek-flash 约为 0.02）；
 - 按会话总量计算的缓存命中率，%（部分命中永远不会被四舍五入成 100）；
 - 单步冷输入（最后一次请求中的新 token）；
-- 档位：0 = 正常，1 = 警告，2 = 偏高，3 = 危急；
+- 档位：0 = 正常，1 = 注意，2 = 偏高，3 = 严重；
 - **DeepSeek 余额**（只有数字；密钥永远不会到达客户端）；
 - **高峰/低谷费率**，以及距切换的倒计时。
 
@@ -169,7 +169,7 @@ prompt 缓存的提供方在其 `providerRates` 记录里写 `cached: false`：�
 
 ## 信号
 
-- 当会话进入某个档位、出现冷预填、或单步费用偏高时，写入一条服务端日志；
+- 当会话进入某个档位、出现异常新输入、或单步费用偏高时，写入一条服务端日志；
 - 按档位着色的客户端胶囊，带详情面板；默认在会话顶部，可以移到输入框下方
   或侧边栏底部；
 - 胶囊上：余额，以及遵循 DeepSeek 时间表的提供方的费率标记（高峰 / 低谷 + 倒计时）。
@@ -231,8 +231,8 @@ outputRate）是低谷价；高峰时乘以 peakMultiplier（默认 2），因�
 
 ## 交接按钮
 
-一键完成：宿主组装会话摘要（首个任务、会话过程——每个请求及其结果、当前状态、cwd、
-触及的文件、子会话），客户端通过 `ctx.uiWorkspace.startSession()` 在**同一工作区打开
+一键完成：宿主组装会话摘要（首个任务、会话过程——每个请求及其结果、当前状态、
+触及的文件（git status 与工具调用）、子会话），客户端通过 `ctx.uiWorkspace.startSession()` 在**同一工作区打开
 新会话**，并把摘要放进它的草稿。没有分支或回退：没有 Alt+点击、没有插入当前会话、
 没有剪贴板。
 
@@ -256,7 +256,8 @@ outputRate）是低谷价；高峰时乘以 peakMultiplier（默认 2），因�
 
 语言：**en**（默认）、**zh**、**ru**。切换按钮是胶囊头部刷新控件旁边的小按钮：它显示
 当前代码（EN / 中文 / RU）并循环切换。选择会记在浏览器里
-（`localStorage: dsh-context-governor.lang`），并立即重绘胶囊和交接按钮。
+（`localStorage: dsh-context-governor.lang`），并立即重绘胶囊和两个输入区按钮
+（压缩与交接）。
 
 语言覆盖所有界面文本（面板标签、告警、工具提示）以及交接按钮插入新会话的文档语言：
 客户端把 `lang` 传给 `/api/handoff`。宿主返回不含文本的数据（档位、费率和告警都是
@@ -267,7 +268,7 @@ outputRate）是低谷价；高峰时乘以 peakMultiplier（默认 2），因�
 默认情况下胶囊在会话顶部。面板头部语言切换按钮旁边的 ⇄ 按钮会让它在三个位置之间轮换：
 
 - 会话顶部；
-- 输入框下方的停靠行（tok/s 和 cache-hit 所在的那一行）；
+- 输入框下方的停靠行（上下文指示器所在的那一行）；
 - 左侧边栏底部、设置与账户那一行的上方。
 
 同一时间只显示一份，选择会记在浏览器里（`localStorage: dsh-context-governor.place`），
@@ -306,7 +307,7 @@ band i                = bandRatios[i] * compaction threshold
 告警。
 
 在 `~/.dsh/profiles/web/cordis.patch.yml` 的 `context-governor` 块里只能调
-`bandRatios`、`headroomTokens`、`thresholdRatio`，默认费率（`freshRate`、
+`base`、`bandRatios`、`headroomTokens`、`thresholdRatio`，默认费率（`freshRate`、
 `cacheReadRate`、`cacheWriteRate`、`outputRate`、`peakMultiplier`），按提供方的
 覆盖（`pricedProviders`、`providerRates`——费率、`seasonal`、`cached`、`peakMultiplier`）与
 信号阈值（`anomalyDelta`、`anomalyCostUsd`、`cacheHitFloorPct`）；节假日日历——
@@ -318,7 +319,7 @@ band i                = bandRatios[i] * compaction threshold
 
 ## 说明
 
-档位由模型窗口推导；warn/high/critical 这些标签不会被回读。插件只测量、从不裁剪：
+档位由模型窗口推导；档位标签（正常/注意/偏高/严重）不会被回读。插件只测量、从不裁剪：
 它不改动历史或 prompt。
 
 ## 许可证
