@@ -1,8 +1,8 @@
 # Changelog
 
-## 08.11.2026 · 0.4.0
+## 08.11.2026 · 0.4.1
 
-Release commit: `a4622a5`.
+Feature commit: `a4622a5`.
 
 - The chip can now be moved with the **⇄** button in the panel header, next to the
   language switch: it cycles through the session header (default), the dock under
