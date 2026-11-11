@@ -407,6 +407,27 @@ async function main() {
   /* Календаря нет (сеть выключена) — клиент должен знать, что тариф приблизительный. */
   eq('missing holiday calendar is reported', d.season.holidayKnown, false)
 
+  /* Регрессия: аккаунт harness приходит провайдером `deepseek-account`. Это тот
+     же DeepSeek, поэтому ставки, цена шага и сезон должны считаться — точное
+     сравнение с `deepseek` их теряло. */
+  const accountSession = { header: { id: 'sess-account' } }
+  feedSession(h, accountSession, {
+    provider: 'deepseek-account',
+    model: 'deepseek-flash',
+    maxTokens: 256000,
+    window: 1000000,
+    buckets: { uncachedInputTokens: 100, cacheReadTokens: 900, cacheWriteTokens: 50, outputTokens: 20 },
+  })
+  await tick()
+
+  const a = await statusOf(h, 'sess-account')
+  eq('harness account route', a.config.route, 'deepseek-account/deepseek-flash')
+  eq('harness account provider is priced', a.config.priced, true)
+  ok('harness account step cost is positive', typeof a.current.costUsd === 'number' && a.current.costUsd > 0, JSON.stringify(a.current))
+  ok('harness account relative is a number', typeof a.current.relative === 'number', JSON.stringify(a.current))
+  ok('harness account rates are known', a.rates !== null && typeof a.rates === 'object', JSON.stringify(a.rates))
+  ok('harness account keeps the seasonal tariff', a.season !== null && typeof a.season.peak === 'boolean', JSON.stringify(a.season))
+
   console.log('balance: account wallets and extra currencies')
   /* Платформа отдаёт пополнения (value) и подарки (bonusWallets) раздельно:
      баланс — их сумма, иначе выходит «$19.26, подарок $29.53». Юани лежат

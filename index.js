@@ -229,11 +229,15 @@ function hasExplicitRates(profile) {
 /** Тот ли провайдер, для которого плагин знает цены. DSH не отдаёт токен-
     цены ни в модели, ни в проекции, ни в сервисе — поэтому плагин вынужден
     поддерживать таблицу ставок себе. Знаем ставки у: списка pricedProviders,
-    любого id на `deepseek` и любого провайдера со своей записью в providerRates. */
+    любого id, начинающегося с `deepseek`, и любого провайдера со своей записью
+    в providerRates.
+    Префикс, а не точное `deepseek`: аккаунт harness называется `deepseek-account`,
+    и цена шага должна считаться на нём так же, как на `deepseek-official`; новый
+    `deepseek-*` иначе молча выпадал бы из priced, пока его не впишут в список. */
 function isPricedProvider(cfg, provider) {
   const list = Array.isArray(cfg.pricedProviders) ? cfg.pricedProviders : []
   const p = String(provider || '')
-  if (list.indexOf(p) >= 0 || p.split('/')[0] === 'deepseek') return true
+  if (list.indexOf(p) >= 0 || p.indexOf('deepseek') === 0) return true
   return hasExplicitRates(providerProfile(cfg, p))
 }
 
