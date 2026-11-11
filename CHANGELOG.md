@@ -1,6 +1,8 @@
 # Changelog
 
-## 11.11.2026
+## 11.11.2026 · 0.4.2
+
+Fix commit: `b2789f2`. Documentation: `a44b316`.
 
 - The step price is computed for the harness account provider `deepseek-account`:
   `isPricedProvider()` now accepts any id starting with `deepseek` (the same
