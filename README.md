@@ -106,7 +106,7 @@ are missing, the plugin is probably disabled, and `dsh --dump-config` will say s
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 142 assertions: no network, no model calls
+npm test                     # 148 assertions: no network, no model calls
 ./scripts/compat-check.sh    # boots a spare instance on 3099 and asks its API
 dsh plugin --profile web add "link:$PWD"
 ```
@@ -147,9 +147,10 @@ it agrees with the harness cache-hit pill. A partial hit is never rounded up to
 100 — extra decimals are added instead, and only a miss-free hit shows exactly
 `100%`.
 
-**Window and threshold.** The model window and pressure come from the
-`contextPressure` projection (`contextWindow`, `pressureTokens`); the output
-reserve comes from `request/header` (the request `maxTokens`). The compaction
+**Window and threshold.** The model window comes from the `contextPressure`
+projection (`contextWindow`), with `request/context` (`contextWindow`) as an early
+hint; the output reserve comes from `request/header` (the request `maxTokens`),
+falling back to the catalog's `defaultMaxTokens`. The compaction
 threshold is computed exactly as the harness does (`dsh-compaction-basic`):
 
 ```
@@ -252,13 +253,14 @@ other provider a foreign total on the chip is plain misinformation: no balance i
 displayed there, and the panel shows a DeepSeek-only note instead of a number. The
 provider list is configurable through `balanceProviders` (default
 `['deepseek-official']`), and any id starting with `deepseek` is accepted. If a
-session has no route of its own yet, the provider is not guessed and the balance
-stays hidden.
+session has no route of its own yet, the provider comes from the selected default
+model (`agentDefaultModel.currentSelection()`); without one the balance stays
+hidden.
 
 The key **never leaves the host**: only numbers reach the client (total, bonus,
 top-up, currency, availability, other wallets). Concurrent reads collapse, and failures degrade
 into a state (no-credential, error, disabled) rather than an exception. The
-refresh button clears the cache and re-reads the balance and the tariff.
+refresh button bypasses the balance cache and re-reads the balance and the tariff.
 
 **The currency is not converted.** The step cost and the configured rates
 (`freshRate`, `cacheReadRate`, `cacheWriteRate`, `outputRate` — all $/1M) are in
@@ -337,13 +339,15 @@ chip becomes a single band-coloured icon that opens the same panel.
 
 ## Thresholds
 
-**The plugin never hardcodes the model window — it reads it from the harness:**
+**By default the plugin does not hardcode the model window — it reads it from the
+harness (`windowTokens` can force one):**
 
-1. The main source is the `contextPressure` projection (`contextWindow`,
-   `pressureTokens`) of `ctx.sessionProjections`: the authoritative window of
-   the live session.
+1. The main source is the `contextPressure` projection (`contextWindow`) of
+   `ctx.sessionProjections`: the authoritative window of the live session;
+   `request/context` (`contextWindow`) is an early hint before the projection
+   warms up.
 2. The output reserve is the request `maxTokens` from the `request/header`
-   event; until then `request/context` (`contextWindow`) serves as a hint.
+   event; until it arrives, the catalog's `defaultMaxTokens` serves as a hint.
 3. The model catalog (`ctx.llm.resolveModelInfo` for
    `agentDefaultModel.currentSelection()`) remains a hint until the first request.
 
@@ -352,7 +356,7 @@ Window and reserve are kept **per session**.
 The compaction threshold and the bands are derived from the window:
 
 ```
-reserve               = request maxTokens
+reserve               = request maxTokens (else catalog defaultMaxTokens)
 compaction threshold  = min(thresholdRatio * window, window - reserve - headroomTokens)
 band i                = bandRatios[i] * compaction threshold
 ```

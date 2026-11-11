@@ -1,5 +1,28 @@
 # Changelog
 
+## 11.11.2026
+
+- The step price is computed for the harness account provider `deepseek-account`:
+  `isPricedProvider()` now accepts any id starting with `deepseek` (the same
+  prefix rule the balance and season gates already use) instead of comparing the
+  id with `deepseek` exactly. The default `pricedProviders` list did not contain
+  `deepseek-account`, so `/api/status` reported `priced: false`, `costUsd: null`
+  and `rates: null` while the seasonal tariff was still shown. The smoke suite
+  pins the `deepseek-account/deepseek-flash` route: `priced: true`, a positive
+  step cost, a numeric relative cost, known rates and a non-null season (148
+  assertions).
+- Documentation audit: the module cards and the three READMEs were re-checked
+  against the code. The window and reserve sources now read exactly as the code
+  resolves them (`contextPressure` / `request/context` for the window, the
+  catalog `defaultMaxTokens` as the reserve fallback; the unused `pressureTokens`
+  claim is gone), a fresh session with no route takes the provider from
+  `agentDefaultModel.currentSelection()` instead of "not guessed", the handoff
+  card no longer claims the digest collects child sessions (the text adds them
+  from the snapshot) and describes `cwd` as the base for git-relative paths, the
+  log card includes the anomalous fresh-input line, the refresh button bypasses
+  the balance cache rather than clearing it, and the assertion count matches the
+  suite.
+
 ## 08.11.2026 · 0.4.1
 
 Feature commit: `a4622a5`.

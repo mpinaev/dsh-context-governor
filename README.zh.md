@@ -93,7 +93,7 @@ dsh plugin --profile web add github:mpinaev/dsh-context-governor
 ```sh
 git clone https://github.com/mpinaev/dsh-context-governor.git
 cd dsh-context-governor
-npm test                     # 142 项断言：不用网络，不调用模型
+npm test                     # 148 项断言：不用网络，不调用模型
 ./scripts/compat-check.sh    # 在 3099 端口启动一个临时实例并请求其 API
 dsh plugin --profile web add "link:$PWD"
 ```
@@ -130,8 +130,9 @@ dsh plugin --profile web add "link:$PWD"
 部分命中永远不会被四舍五入成 100——而是补足小数位，只有零未命中的命中才显示恰好
 `100%`。
 
-**窗口与阈值。** 模型窗口与压力来自 `contextPressure` 投影（`contextWindow`、
-`pressureTokens`）；输出预留来自 `request/header`（请求的 `maxTokens`）。压缩阈值
+**窗口与阈值。** 模型窗口来自 `contextPressure` 投影（`contextWindow`），在它就绪前
+`request/context`（`contextWindow`）作为早期提示；输出预留来自 `request/header`
+（请求的 `maxTokens`），否则取模型目录的 `defaultMaxTokens`。压缩阈值
 与 harness（`dsh-compaction-basic`）完全一致：
 
 ```
@@ -211,11 +212,12 @@ outputRate）是低谷价；高峰时乘以 peakMultiplier（默认 2），因�
 **余额只对 DeepSeek 提供方显示。** 在 cline、clinebot 或任何其他提供方上，把别人的
 金额显示在胶囊里就是误导：那里不显示余额，面板用“仅限 DeepSeek”的说明替代数字。
 提供方列表通过 `balanceProviders` 配置（默认 `['deepseek-official']`），并接受任何
-以 `deepseek` 开头的 id。如果会话还没有自己的路由，就不猜提供方，余额保持隐藏。
+以 `deepseek` 开头的 id。如果会话还没有自己的路由，提供方取自默认模型选择
+（`agentDefaultModel.currentSelection()`）；没有默认选择时余额隐藏。
 
 密钥**永不离开宿主**：只有数字到达客户端（总量、赠送、充值、货币、可用性、其他钱包）。并发
 读取会合并，失败会退化为一种状态（no-credential、error、disabled）而不是抛异常。
-刷新按钮会清空缓存并重新读取余额和费率。
+刷新按钮绕过余额缓存并重新读取余额和费率。
 
 **货币不做换算。** 单步费用和配置的费率（`freshRate`、`cacheReadRate`、
 `cacheWriteRate`、`outputRate`，均为 $/1M）以美元计，而余额按来源返回的货币显示
@@ -278,12 +280,14 @@ outputRate）是低谷价；高峰时乘以 peakMultiplier（默认 2），因�
 
 ## 阈值
 
-**插件从不硬编码模型窗口——它从 harness 读取：**
+**默认情况下插件不硬编码模型窗口——它从 harness 读取（可用 `windowTokens`
+强制指定）：**
 
-1. 主要来源是 `ctx.sessionProjections` 的 `contextPressure` 投影（`contextWindow`、
-   `pressureTokens`）：实时会话的权威窗口。
-2. 输出预留是 `request/header` 事件里的请求 `maxTokens`；在那之前，`request/context`
-   （`contextWindow`）作为提示。
+1. 主要来源是 `ctx.sessionProjections` 的 `contextPressure` 投影
+   （`contextWindow`）：实时会话的权威窗口；在它就绪前
+   `request/context`（`contextWindow`）作为早期提示。
+2. 输出预留是 `request/header` 事件里的请求 `maxTokens`；在那之前，
+   模型目录的 `defaultMaxTokens` 作为提示。
 3. 模型目录（对 `agentDefaultModel.currentSelection()` 调用
    `ctx.llm.resolveModelInfo`）在首次请求前只是提示。
 
@@ -292,7 +296,7 @@ outputRate）是低谷价；高峰时乘以 peakMultiplier（默认 2），因�
 压缩阈值与档位由窗口推导：
 
 ```
-reserve               = request maxTokens
+reserve               = request maxTokens（否则 defaultMaxTokens）
 compaction threshold  = min(thresholdRatio * window, window - reserve - headroomTokens)
 band i                = bandRatios[i] * compaction threshold
 ```

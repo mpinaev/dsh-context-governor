@@ -22,25 +22,30 @@ sources:
 
 - Основной путь — сервис `sessionProjections`: проекции `tokenUsage`
   (`uncachedInputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `outputTokens`)
-  и `contextPressure` (`contextWindow`, `pressureTokens`). Итоги сессии и
-  последний шаг берутся из `totals`/`last.buckets`.
-- Резерв вывода и ранняя подсказка по окну — события сессии
-  `request/header` (`config.maxTokens`, провайдер и модель) и `request/context`.
+  и `contextPressure` (`contextWindow`). Итоги сессии и последний шаг берутся из
+  `totals`/`last.buckets`.
+- Маршрут сессии (провайдер/модель) и резерв вывода приходят событиями
+  `request/header` (`config.maxTokens`) и `request/context`.
 - Если проекций в сборке нет, токены собираются свёрткой `llm/stream`.
-- Окно модели: проекция `contextPressure`, затем каталог `ctx.llm`, затем
-  контекст запроса; значение из конфига плагина не подставляется вместо
-  неизвестного.
+- Окно и резерв: заданные в конфиге `windowTokens`/`reservedTokens` больше нуля
+  приоритетнее harness. Иначе окно — из проекции `contextPressure`, затем из
+  `request/context`, затем из каталога `ctx.llm`; резерв — `maxTokens` из
+  `request/header`, затем `defaultMaxTokens` каталога. Пока окно неизвестно,
+  порог и полосы не выдумываются.
 
 ## HTTP
 
 Префикс `/context-governor`, обработчик `ctx.webServer.register`:
 
 - `GET /context-governor/api/status` — снимок сессии: `current`, `children`,
-  `season`, `rates`, `warnings`, `config` (порог, окно, резерв, база, провайдер,
-  `priced`, `cached`). Параметры: `sessionId`, `refresh`, `lang`, `tz`, `ver`.
+  `season`, `rates`, `warnings`, `config` (база, порог, окно и его источник,
+  резерв, маршрут, провайдер, `priced`, `cached`).
 - `GET /context-governor/api/balance` — баланс для провайдера сессии.
-- `GET /context-governor/api/handoff` — текст сводки сессии. Параметры:
-  `sessionId`, `lang`.
+- `GET /context-governor/api/handoff` — текст сводки сессии.
+
+Параметры: `sessionId` — сессия; `lang` — язык сводки (en/zh/ru, по умолчанию
+en); `tz` — смещение часового пояса в секундах; `ver` — версия клиента для
+официального баланса; `refresh=1` — обновить баланс в обход TTL.
 
 Доступ закрыт служебным заголовком `x-dsh-context-governor: 1` и проверкой
 Origin: запрос без Origin пропускается, чужой Origin получает 403.
@@ -50,8 +55,9 @@ Origin: запрос без Origin пропускается, чужой Origin �
 `threshold = min(thresholdRatio * window, window - reserved - headroom)`:
 
 - `thresholdRatio` — 0.8, `headroomTokens` — 65536;
-- `reservedTokens` — 0, то есть `maxTokens` запроса из `request/header`;
-- `windowTokens` — 0, то есть окно из harness;
+- `reservedTokens` — 0: `maxTokens` запроса из `request/header`, иначе
+  `defaultMaxTokens` каталога;
+- `windowTokens` — 0: окно из harness (см. «Откуда данные»);
 - полосы — доли порога из `bandRatios` (0.35, 0.6, 0.85), номер полосы
   считается на хосте и уходит клиенту готовым.
 
@@ -62,27 +68,35 @@ Origin: запрос без Origin пропускается, чужой Origin �
 - Ставки — $/1M: `freshRate` 0.15, `cacheReadRate` 0.003, `cacheWriteRate` 0.15,
   `outputRate` 0.6; `peakMultiplier` 2; `base` 100000 для относительной цены.
 - Цена считается только для провайдеров со ставками: `pricedProviders`
-  (по умолчанию `['deepseek-official']`), id на `deepseek` и записи
-  `providerRates` (ставки, `seasonal`, `cached`, `peakMultiplier`).
+  (по умолчанию `['deepseek-official']`), любой id, начинающийся с `deepseek`
+  (включая `deepseek-account`), и записи `providerRates` (ставки, `seasonal`,
+  `cached`, `peakMultiplier`).
 - Календарь праздников берётся из `holidayUrl` (данные пакета `chinese-days`),
   кэшируется в `<DSH_HOME>/cache/context-governor`, свои даты — конфиг
   `holidays`; `holidayFetch: false` отключает сеть.
-- Баланс: сначала сервис `deepseekAccount.getBalance`, затем
-  `GET https://api.deepseek.com/user/balance` с ключом из сервиса
-  `credentials` (`DEEPSEEK_API_KEY`) или окружения; TTL 60 с, одновременные
-  чтения схлопываются. Показывается только на `balanceProviders` и id на
-  `deepseek`.
+- Баланс: при `useAccountBalance` и непустом `ver` сначала сервис
+  `deepseekAccount` (`getState` — `credential-stored`, затем `getBalance`),
+  затем `GET https://api.deepseek.com/user/balance` с ключом из сервиса
+  `credentials` (`DEEPSEEK_API_KEY`) или окружения; ответ кэшируется на
+  `balanceTtlMs` (60 с), одновременные чтения схлопываются. Показывается только
+  на `balanceProviders` и любом id, начинающемся с `deepseek`.
 
 ## Handoff
 
-`surfaceDigest(sessionId)` собирает задачу, ход сессии (запрос → итог), текущее
-состояние, `cwd` и затронутые файлы, дочерние сессии. К списку файлов
-добавляется `git status --porcelain --untracked-files=no` в `cwd`; текст
+`surfaceDigest(sessionId)` собирает задачу (первый запрос пользователя), ход
+сессии (цепочка «запрос → итог»), последнее состояние ассистента, `cwd` и
+затронутые файлы. Список файлов дополняется
+`git status --porcelain --untracked-files=no` в `cwd`; пути из git
+относительны cwd, из `tool/call` — абсолютны, поэтому приводятся к одному виду.
+`handoffText` добавляет контекст активной сессии (prompt, полоса, свежие токены,
+cache-hit, цена шага), дочерние сессии и правила новой сессии. Текст
 локализуется en/zh/ru и отдаётся через `/api/handoff`.
 
 ## Логи
 
-Старт: источник токенов, окно и тариф. Во время работы: вход в полосу и дорогой
-шаг. Коды предупреждений (`cacheHitLow`, `coldPrefill`, `expensiveStep`,
-`nearCompaction`, `windowUnknown`, `childrenTokens`, `childrenCount`) уходят
-клиенту в `warnings` и переводятся там.
+Старт: окно и тариф модели по умолчанию, источник токенов, загрузка календаря
+праздников. Во время работы: вход в полосу, аномальный свежий вход
+(`anomalyDelta`) и дорогой шаг (`anomalyCostUsd`). Коды предупреждений
+(`cacheHitLow`, `coldPrefill`, `expensiveStep`, `nearCompaction`,
+`windowUnknown`, `childrenTokens`, `childrenCount`) уходят клиенту в `warnings`
+и переводятся там.
