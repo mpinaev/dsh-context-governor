@@ -93,7 +93,7 @@ the cache buckets, the step cost and the balance provider gate.
 | DSH version | State |
 |---|---|
 | `0.1.7-rc.2` … `<0.2.0` | supported, verified live |
-| `0.2.0-rc.1` … `<0.3.0` | supported; CI probes the newest published DSH weekly and fails if the version gate disables the plugin |
+| `0.2.0-rc.1` … `<0.3.0` | supported, `0.2.2-rc.3` verified live; CI probes the newest published DSH weekly and fails if the version gate disables the plugin |
 
 DSH **disables** the plugin when its declared range does not cover the running
 version. The plugin declares that range in `engines.dsh`, which DSH 0.2.1 and

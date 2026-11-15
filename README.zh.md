@@ -81,7 +81,7 @@ dsh plugin --profile web add github:mpinaev/dsh-context-governor
 | DSH 版本 | 状态 |
 |---|---|
 | `0.1.7-rc.2` … `<0.2.0` | 支持，已在线验证 |
-| `0.2.0-rc.1` … `<0.3.0` | 支持；CI 每周检查最新发布的 DSH，若版本门禁停用插件则失败 |
+| `0.2.0-rc.1` … `<0.3.0` | 支持，`0.2.2-rc.3` 已在线验证；CI 每周检查最新发布的 DSH，若版本门禁停用插件则失败 |
 
 当声明的范围不覆盖正在运行的版本时，DSH 会**停用**插件。范围声明在 `engines.dsh`
 中：DSH 0.2.1 及以后优先使用该字段，`peerDependencies` 仅作兼容保留；两种匹配都

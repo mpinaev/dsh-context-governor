@@ -1,5 +1,17 @@
 # Changelog
 
+## 15.11.2026 · 0.4.3
+
+Compatibility: DSH `0.2.2-rc.3` verified live.
+
+- The running DSH `0.2.2-rc.3` is already inside the declared range
+  (`engines.dsh: ^0.1.7-rc.2 || ^0.2.0-rc.1`, the peers repeat it), so the
+  version gate keeps the plugin enabled: on the live host the chip reports
+  `priced: true`, a step cost and the seasonal tariff. No range widening was
+  needed. The compatibility table in all three READMEs now names `0.2.2-rc.3`
+  as verified live, and the weekly CI probe keeps watching the newest
+  published DSH.
+
 ## 11.11.2026 · 0.4.2
 
 Fix commit: `b2789f2`. Documentation: `a44b316`.

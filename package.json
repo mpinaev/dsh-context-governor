@@ -1,6 +1,6 @@
 {
   "name": "dsh-context-governor",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Session context governor for DeepSeek Harness: prompt size and per-step cost in dollars (cache-read/cache-write aware), cache-hit, context bands, a per-session compaction threshold derived from the model window, DeepSeek balance and peak/off-peak tariff, a one-click handoff, a compact button that runs the built-in /compact, and a place button that moves the chip between the session header, the composer dock and the sidebar foot. The plugin itself never calls a model and spends no tokens; the compact button spends tokens only when clicked.",
   "type": "module",
   "main": "index.js",
