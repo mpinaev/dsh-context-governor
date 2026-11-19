@@ -1,6 +1,6 @@
 # Changelog
 
-## 20.11.2026 · 0.4.4
+## 20.11.2026 · 0.4.5
 
 Fix commit: `328ceed`.
 
@@ -20,9 +20,7 @@ Fix commit: `328ceed`.
 - The `/context-governor` HTTP route is registered through `ctx.effect`, so
   unloading or reloading the plugin removes it; without this a second mount
   failed on the duplicate prefix and left the old route serving the previous
-  code. The service is read with `ctx.get('webServer')` rather than the
-  injected property, so a hot swap that cannot restore the declared inject
-  still mounts.
+  code.
 - Documentation: the three READMEs, the host and client module cards describe
   the transfer and the new route.
 
