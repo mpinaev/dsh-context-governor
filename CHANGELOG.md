@@ -2,6 +2,8 @@
 
 ## 20.11.2026 · 0.4.4
 
+Fix commit: `328ceed`.
+
 - The handoff button used to move only the summary text. Active scheduled
   tasks stayed targeted at the old session, so archiving it was refused; the
   offered "stop and archive" would have deleted those tasks. The new session's
