@@ -1451,6 +1451,79 @@ export function apply(ctx, config = {}) {
     return out
   }
 
+  /** Тело POST-запроса: только маленький JSON, иначе null. */
+  function readJsonBody(req, limit) {
+    return new Promise(function (resolve) {
+      if (!req || typeof req.on !== 'function') { resolve(null); return }
+      const chunks = []
+      let size = 0
+      let settled = false
+      const finish = function (value) {
+        if (settled) return
+        settled = true
+        resolve(value)
+      }
+      req.on('data', function (chunk) {
+        if (settled) return
+        size += chunk.length
+        if (size > limit) { finish(null); return }
+        chunks.push(chunk)
+      })
+      req.on('end', function () {
+        if (settled) return
+        try { finish(JSON.parse(Buffer.concat(chunks).toString('utf8'))) } catch (error) { finish(null) }
+      })
+      req.on('error', function () { finish(null) })
+    })
+  }
+
+  /** Сервис задач автоматизации в сборке: в старых ядрах его нет. */
+  function scheduleService() {
+    try {
+      const svc = typeof ctx.get === 'function' ? ctx.get('schedule') : undefined
+      return svc && typeof svc.catalog === 'function' && typeof svc.edit === 'function' ? svc : null
+    } catch (error) {
+      return null
+    }
+  }
+
+  /**
+   * Переносит живые задачи автоматизации со старой сессии на новую: архив
+   * старой сессии иначе отказан активной задачей, а «остановить и заархивировать»
+   * удаляет её вместо продолжения. Завершённые задачи — история, их не трогаем.
+   */
+  function transferSessionTasks(from, to) {
+    const schedule = scheduleService()
+    if (schedule === null) return Promise.resolve({ moved: 0, failed: 0, unavailable: true })
+    return Promise.resolve(schedule.catalog()).then(function (tasks) {
+      const movable = (Array.isArray(tasks) ? tasks : []).filter(function (task) {
+        return task && task.status !== 'ended' && task.target && task.target.kind === 'session' && task.target.sessionId === from
+      })
+      let moved = 0
+      let failed = 0
+      let chain = Promise.resolve()
+      movable.forEach(function (task) {
+        chain = chain.then(function () {
+          return Promise.resolve(schedule.edit({
+            id: task.id,
+            action: 'update',
+            patch: { target: { kind: 'session', sessionId: to } },
+          })).then(function (result) {
+            if (result && result.code === undefined) moved += 1
+            else failed += 1
+          }, function (error) {
+            failed += 1
+            log('handoff: задачу ' + String(task.id) + ' перенести не удалось: ' + String((error && error.message) || error))
+          })
+        })
+      })
+      return chain.then(function () {
+        if (moved > 0 || failed > 0) log('handoff: задач перенесено ' + moved + ', не удалось ' + failed)
+        return { moved: moved, failed: failed }
+      })
+    })
+  }
+
   function handler(req, res) {
     const headers = (req && req.headers) || {}
     const url = String((req && req.url) || '')
@@ -1471,6 +1544,27 @@ export function apply(ctx, config = {}) {
     }
     if (!sameOrigin(req)) {
       return send({ ok: false, state: 'forbidden', error: 'cross-origin request rejected' }, 403)
+    }
+    /* Перенос задач автоматизации — изменяющее действие, поэтому POST: клиент
+       новой сессии присылает обе сессии после вставки сводки в черновик. */
+    if (url.indexOf('/api/handoff/take') !== -1) {
+      if (String((req && req.method) || '').toUpperCase() !== 'POST') {
+        return send({ ok: false, error: 'POST required' }, 405)
+      }
+      readJsonBody(req, 4096).then(function (body) {
+        const from = body && typeof body.from === 'string' ? body.from : ''
+        const to = body && typeof body.to === 'string' ? body.to : ''
+        if (!from || !to || from === to) {
+          send({ ok: false, error: 'from and to sessions are required and must differ' }, 400)
+          return
+        }
+        return transferSessionTasks(from, to).then(function (result) {
+          send({ ok: true, moved: result.moved, failed: result.failed, unavailable: result.unavailable === true })
+        }, function (error) {
+          send({ ok: false, error: String((error && error.message) || error) }, 500)
+        })
+      })
+      return
     }
     /* Идентичность UI для официального баланса: версию и таймзону присылает
        клиент, язык берём из того же query (en/zh/ru). Пустая версия — значит
@@ -1505,7 +1599,13 @@ export function apply(ctx, config = {}) {
     send({ ok: false, error: 'unknown endpoint' }, 404)
   }
 
-  ctx.webServer.register({ kind: 'prefix', path: '/context-governor', handler })
+  /* Роут живёт в effect: при выгрузке/перезагрузке плагина webServer должен
+     снять его, иначе повторный apply падает на дубликате пути. */
+  const registerRoute = function () {
+    return ctx.webServer.register({ kind: 'prefix', path: '/context-governor', handler })
+  }
+  if (typeof ctx.effect === 'function') ctx.effect(registerRoute, 'context-governor: http routes')
+  else registerRoute()
 
   /** Стартовый резолв: окно модели по умолчанию из настроек harness. */
   function bootstrapDefaultRoute() {

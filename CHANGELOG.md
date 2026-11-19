@@ -1,5 +1,29 @@
 # Changelog
 
+## 20.11.2026 · 0.4.4
+
+- The handoff button used to move only the summary text. Active scheduled
+  tasks stayed targeted at the old session, so archiving it was refused; the
+  offered "stop and archive" would have deleted those tasks. The new session's
+  client now sends `POST /context-governor/api/handoff/take` with `{ from, to }`,
+  and the host retargets every live schedule task (active or paused) whose
+  target is `from` to `to` through `schedule.edit`. Ended tasks remain history.
+  A host without the `schedule` service still accepts the handoff and reports
+  the transfer as unavailable.
+- The button reports the outcome: how many tasks moved, how many the host
+  refused, or that the summary was inserted but the tasks stayed in the old
+  session. The smoke suite pins the endpoint (only live tasks, only the old
+  session's target, retarget to the new session, refusals counted, POST-only,
+  equal ids rejected) and the suite is now 158 assertions.
+- The `/context-governor` HTTP route is registered through `ctx.effect`, so
+  unloading or reloading the plugin removes it; without this a second mount
+  failed on the duplicate prefix and left the old route serving the previous
+  code. The service is read with `ctx.get('webServer')` rather than the
+  injected property, so a hot swap that cannot restore the declared inject
+  still mounts.
+- Documentation: the three READMEs, the host and client module cards describe
+  the transfer and the new route.
+
 ## 15.11.2026 · 0.4.3
 
 Compatibility: DSH `0.2.2-rc.3` verified live.

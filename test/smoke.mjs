@@ -10,6 +10,7 @@
  */
 
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -286,6 +287,7 @@ function makeHarness(options = {}) {
   if (options.llm !== false) {
     services.llm = { resolveModelInfo: async () => ({ context: { contextWindow: 1000000 }, defaultMaxTokens: 256000 }) }
   }
+  if (options.schedule !== undefined) services.schedule = options.schedule
   const ctx = {
     on(name, fn) { (hooks[name] = hooks[name] || []).push(fn) },
     get(name) { return services[name] },
@@ -293,6 +295,7 @@ function makeHarness(options = {}) {
     webServer: { register(entry) { registered.push(entry) } },
     effect(fn) { try { return fn() } catch (error) { return undefined } },
   }
+  services.webServer = ctx.webServer
   return { ctx, hooks, registered, state, services }
 }
 
@@ -335,6 +338,37 @@ async function statusOf(harness, sessionId) {
   return body ? JSON.parse(body) : null
 }
 
+/** POST /api/handoff/take: тело отдаём так же, как node:http — событиями. */
+async function takeHandoffOf(harness, from, to, method) {
+  const handler = harness.registered[0].handler
+  const req = new EventEmitter()
+  req.url = '/context-governor/api/handoff/take'
+  req.method = method || 'POST'
+  req.headers = { 'x-dsh-context-governor': '1' }
+  let body = ''
+  await handler(req, { setHeader() {}, end(text) { body = text } })
+  if (req.method === 'POST') {
+    req.emit('data', Buffer.from(JSON.stringify({ from, to })))
+    req.emit('end')
+  }
+  for (let i = 0; i < 50 && !body; i += 1) await tick()
+  return body ? JSON.parse(body) : null
+}
+
+/** Сервис расписания-заглушка: каталог задач и запись правок. */
+function fakeSchedule(tasks, refusing) {
+  const edits = []
+  return {
+    edits,
+    catalog: async () => tasks,
+    edit: async (request) => {
+      edits.push(request)
+      if (refusing && refusing.includes(request.id)) return { id: request.id, code: 'schedule_not_found' }
+      return { id: request.id, target: { kind: 'session', sessionId: request.patch.target.sessionId }, status: 'active' }
+    },
+  }
+}
+
 async function main() {
   const mod = await import(new URL('index.js', root))
   const clientSource = readFileSync(new URL('client.js', root), 'utf8')
@@ -342,7 +376,7 @@ async function main() {
 
   console.log('manifest')
   eq('name', mod.name, 'dsh-context-governor')
-  eq('version', manifest.version, '0.4.3')
+  eq('version', manifest.version, '0.4.4')
   eq('not private', manifest.private, undefined)
   eq('bundle patch declared', manifest.dsh.bundle.patch, './cordis.patch.yml')
   /* DSH 0.2.1 prefers engines.dsh and ignores the peers once it is present, so
@@ -492,6 +526,47 @@ async function main() {
     globalThis.fetch = realFetch
     delete process.env.DEEPSEEK_API_KEY
   }
+
+  console.log('handoff: automation tasks follow the summary')
+  const movableTasks = [
+    { id: 't-active', status: 'active', target: { kind: 'session', sessionId: 'sess-old' } },
+    { id: 't-paused', status: 'paused', target: { kind: 'session', sessionId: 'sess-old' } },
+    { id: 't-ended', status: 'ended', target: { kind: 'session', sessionId: 'sess-old' } },
+    { id: 't-other', status: 'active', target: { kind: 'session', sessionId: 'sess-other' } },
+    { id: 't-new', status: 'active', target: { kind: 'new', create: {} } },
+  ]
+  const autoSchedule = fakeSchedule(movableTasks)
+  const hAuto = makeHarness({ schedule: autoSchedule })
+  mod.apply(hAuto.ctx, Object.assign({}, RATES, OFFLINE))
+  const taken = await takeHandoffOf(hAuto, 'sess-old', 'sess-new')
+  ok('the transfer answers ok', taken && taken.ok === true, JSON.stringify(taken))
+  eq('active and paused tasks move', taken && taken.moved, 2)
+  eq('ended tasks stay history', autoSchedule.edits.some((edit) => edit.id === 't-ended'), false)
+  eq('another session\'s task is untouched',
+    autoSchedule.edits.some((edit) => edit.id === 't-other' || edit.id === 't-new'), false)
+  ok('every moved task points at the new session',
+    autoSchedule.edits.length === 2 && autoSchedule.edits.every((edit) => edit.action === 'update' &&
+      edit.patch.target.kind === 'session' && edit.patch.target.sessionId === 'sess-new'),
+    JSON.stringify(autoSchedule.edits))
+
+  const halfSchedule = fakeSchedule(movableTasks, ['t-paused'])
+  const hHalf = makeHarness({ schedule: halfSchedule })
+  mod.apply(hHalf.ctx, Object.assign({}, RATES, OFFLINE))
+  const half = await takeHandoffOf(hHalf, 'sess-old', 'sess-new')
+  eq('a refused task is reported, not hidden', half && half.failed, 1)
+  eq('the rest still move', half && half.moved, 1)
+
+  const hNoSchedule = makeHarness()
+  mod.apply(hNoSchedule.ctx, Object.assign({}, RATES, OFFLINE))
+  const noSchedule = await takeHandoffOf(hNoSchedule, 'sess-old', 'sess-new')
+  ok('a host without schedules still accepts the handoff',
+    noSchedule && noSchedule.ok === true && noSchedule.moved === 0 && noSchedule.unavailable === true,
+    JSON.stringify(noSchedule))
+
+  const wrongMethod = await takeHandoffOf(hAuto, 'sess-old', 'sess-new', 'GET')
+  eq('the transfer route requires POST', wrongMethod && wrongMethod.error, 'POST required')
+  const sameSession = await takeHandoffOf(hAuto, 'sess-old', 'sess-old')
+  eq('the transfer route needs two different sessions', sameSession && sameSession.ok, false)
 
   console.log('handoff: the whole session, not just the last change')
   const userEvent = (text) => ({ type: 'user/message', data: { content: [{ type: 'text', text }] } })

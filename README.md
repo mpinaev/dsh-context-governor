@@ -307,6 +307,15 @@ The summary reaches the new session lazily: the click remembers the text,
 `startSession()` opens the session, its input slot renders, and the same
 component puts the text into the draft through `inputActions.setDraft`.
 
+Automation tasks travel with the summary: the new session's client sends the
+old and the new session ids to the host, and the host retargets every live
+schedule task (active or paused) that delivered into the old session. Ended
+tasks stay history. The old session can then be archived normally: an active
+task no longer holds it, and the archive does not need "stop and archive",
+which would delete the task. Without a schedule service in the build the
+handoff works as before. The button shows how many tasks moved, or how many
+the host failed to move.
+
 ## UI languages
 
 Languages: **en** (default), **zh**, **ru**. The switch is a small button next to

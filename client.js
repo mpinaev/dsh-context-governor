@@ -110,6 +110,9 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         label: '↪ handoff',
         tip: 'Handoff: collects a summary of this session and opens a new one with it in the draft',
         busy: '…', started: 'new session…', inserted: 'summary inserted',
+        tasksMoved: function (n) { return 'summary + ' + n + ' tasks' },
+        tasksFailed: function (n) { return 'summary; ' + n + ' tasks not moved' },
+        tasksStayed: 'summary inserted; automation tasks stayed in the old session',
         none: 'no data', noChannel: 'new-session channel unavailable',
       },
       compact: {
@@ -177,6 +180,9 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         label: '↪ 交接',
         tip: '交接：生成本会话摘要，并新建会话将其放入草稿',
         busy: '…', started: '新会话…', inserted: '摘要已插入',
+        tasksMoved: function (n) { return '摘要 + 任务 ' + n + ' 个' },
+        tasksFailed: function (n) { return '摘要；未迁移任务 ' + n + ' 个' },
+        tasksStayed: '摘要已插入；自动化任务仍留在旧会话',
         none: '无数据', noChannel: '新会话通道不可用',
       },
       compact: {
@@ -244,6 +250,9 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
         label: '↪ handoff',
         tip: 'Handoff: соберёт сводку этой сессии и откроет новую с ней в черновике',
         busy: '…', started: 'новая сессия…', inserted: 'сводка вставлена',
+        tasksMoved: function (n) { return 'сводка + задач: ' + n },
+        tasksFailed: function (n) { return 'сводка; не перенесено задач: ' + n },
+        tasksStayed: 'сводка вставлена; задачи автоматизации остались в старой сессии',
         none: 'нет данных', noChannel: 'канал новой сессии недоступен',
       },
       compact: {
@@ -379,6 +388,9 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
 
   /** Один таймер на кнопку compact: новый клик не должен гаситься старым. */
   var compactResetTimer = null
+
+  /** Один таймер на кнопку handoff: ответ о переносе задач не должен гаснуть. */
+  var handoffResetTimer = null
 
   function fmtTok(n) {
     if (!Number.isFinite(n)) return '—'
@@ -520,6 +532,18 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
   function fetchHandoff(sessionId, lang) {
     return fetch(endpoint('handoff', sessionId, { lang: lang }), { headers: headers() })
       .then(function (r) { return r.ok ? r.json() : null })
+      .catch(function () { return null })
+  }
+
+  /** Передать новой сессии задачи автоматизации старой; изменяющее действие — POST. */
+  function takeHandoff(from, to) {
+    var postHeaders = headers()
+    postHeaders['content-type'] = 'application/json'
+    return fetch('/context-governor/api/handoff/take', {
+      method: 'POST',
+      headers: postHeaders,
+      body: JSON.stringify({ from: from, to: to }),
+    }).then(function (r) { return r.ok ? r.json() : null })
       .catch(function () { return null })
   }
 
@@ -843,7 +867,8 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
     var sessionId = props && props.sessionId
     var inputActions = props && props.inputActions
 
-    // Новая сессия отрендерила этот же слот — вставляем подготовленную сводку.
+    // Новая сессия отрендерила этот же слот — вставляем подготовленную сводку
+    // и передаём ей задачи автоматизации старой сессии.
     React.useEffect(function () {
       if (!pendingHandoff) return
       var fresh = pendingHandoff
@@ -853,7 +878,18 @@ window.__ModuleLoader__.load({ id: 'dsh-context-governor', factory: (require) =>
       pendingHandoff = null
       inputActions.setDraft(fresh.text)
       setState(M.handoff.inserted)
-      setTimeout(function () { setState('') }, 5000)
+      if (handoffResetTimer) clearTimeout(handoffResetTimer)
+      handoffResetTimer = setTimeout(function () { setState('') }, 5000)
+      if (fresh.fromSessionId === undefined || !sessionId) return
+      takeHandoff(fresh.fromSessionId, sessionId).then(function (payload) {
+        var text = M.handoff.inserted
+        if (!payload || !payload.ok) text = M.handoff.tasksStayed
+        else if (payload.failed > 0) text = M.handoff.tasksFailed(payload.failed)
+        else if (payload.moved > 0) text = M.handoff.tasksMoved(payload.moved)
+        setState(text)
+        if (handoffResetTimer) clearTimeout(handoffResetTimer)
+        handoffResetTimer = setTimeout(function () { setState('') }, 8000)
+      })
     })
 
     var click = React.useCallback(function () {
